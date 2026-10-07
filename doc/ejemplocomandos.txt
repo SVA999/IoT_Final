@@ -1,0 +1,76 @@
+#!/bin/bash
+
+sysctl -w vm.max_map_count=262144
+
+curl -iX POST 'http://localhost:1026/v2/entities' -H 'Content-Type: application/json' -d '{"id":"sensor01","type":"temperatura","temperatura":{"value":21,"type":"Float"}}'
+
+curl -iX PATCH 'http://localhost:1026/v2/entities/sensor01/attrs' -H 'Content-Type: application/json' -d '{"temperatura":{"value":21,"type":"Float"}}'
+
+http://localhost:1026/v2/entities
+
+curl -iX POST \
+  'http://localhost:1026/v2/subscriptions/' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "description": "Notificar sensor de temperatura",
+  "subject": {
+    "entities": [
+      {
+        "idPattern": ".*",
+        "type": "temperatura"
+      }
+    ],
+    "condition": {
+      "attrs": [
+        "temperatura"
+      ]
+    }
+  },
+  "notification": {
+    "http": {
+      "url": "http://quantumleap:8668/v2/notify"
+    },
+    "attrs": [
+      "id",
+      "temperatura"
+    ],
+    "metadata": [
+      "dateCreated",
+      "dateModified"
+     ]
+  }
+}'
+
+#Crear suscripción - nuevo
+POST /v2/subscriptions HTTP/1.1
+Host: localhost:1026
+Content-Type: application/json
+Content-Length: 385
+
+{
+	"description": "Notificar sensor de temperatura",
+	"subject": {
+		"entities": [{
+			"idPattern": ".*",
+			"type": "temperatura"
+		}],
+		"condition": {
+			"attrs": [
+				"temperatura"
+			]
+		}
+	},
+	"notification": {
+		"attrs": [
+			"id",
+			"temperatura"
+		],
+		"http": {
+			"url": "http://quantumleap:8668/v2/notify"
+		},
+		"metadata": [
+			"dateCreated",
+			"dateModified"
+		]
+	}
+}
