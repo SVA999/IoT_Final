@@ -39,9 +39,12 @@ for intento in 1 2 3 4 5; do
     "services": [{"apikey": "'$APIKEY'", "cbroker": "http://orion:1026",
                   "entity_type": "PlantSensor", "resource": "/iot/json"}]}'
 
+  # apikey en el dispositivo: el agente lo busca por {id, service, subservice, apikey}; sin esto no lo encuentra
+  # y autocrea un duplicado 'PlantSensor:planta01' sin mapeo.
   # object_id = clave EXACTA del JSON que envia el firmware.
   post "dispositivo planta01" "http://$HOST:4041/iot/devices" '{
     "devices": [{"device_id": "planta01", "entity_name": "planta01", "entity_type": "PlantSensor",
+      "apikey": "'$APIKEY'", "transport": "HTTP",
       "attributes": [
         {"object_id": "temperatura_aire",   "name": "temperature",  "type": "Number"},
         {"object_id": "humedad_aire",       "name": "humidity",     "type": "Number"},
