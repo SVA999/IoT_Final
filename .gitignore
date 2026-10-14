@@ -4,3 +4,5 @@ __pycache__/
 !*.tfvars.example
 .terraform/
 *.tfstate*
+infra/labsuser.pem
+infra/.terraform.lock.hcl
