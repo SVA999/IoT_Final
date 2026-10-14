@@ -1,74 +1,14 @@
 <!doctype html>
-<html lang="es">
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Monitoreo de plantas</title>
-<style>
-  body { font-family: system-ui; margin: 1rem auto; max-width: 900px; padding: 0 1rem }
-  .card { border: 1px solid #ccc; border-radius: 8px; padding: .8rem; margin: .5rem 0 }
-  .warning { color: #b26a00 } .error { color: #b00020 }
-  #app { display: none } pre { white-space: pre-wrap }
-</style>
-
-<div id="login">
-  <h1>Ingresar</h1>
-  <input id="u" placeholder="Usuario"> <input id="p" type="password" placeholder="Contraseña">
-  <button onclick="doLogin()">Entrar</button> <span id="lerr" class="error"></span>
-</div>
-
-<div id="app">
-  <button onclick="logout()" style="float:right">Salir</button>
-  <h1>Plantas</h1><div id="plantas"></div>
-  <h2>Alertas</h2><div id="alertas"></div>
-  <h2>Pregunta a la IA (Gemini)</h2>
-  <input id="q" style="width:70%" placeholder="¿Debo regar hoy?"> <button onclick="ask()">Enviar</button>
-  <pre id="r"></pre>
-</div>
-
-<script>
-const esc = s => String(s ?? '?').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let timer;
-const tok = () => sessionStorage.getItem('tok');
-
-async function api(url, body) {
-  const r = await fetch(url, {
-    method: body ? 'POST' : 'GET',
-    headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok()},
-    body: body ? JSON.stringify(body) : undefined});
-  if (r.status === 401) { logout(); throw new Error('401'); }
-  return r.json();
-}
-
-async function doLogin() {
-  const r = await fetch('/api/login', {method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({usuario: u.value, password: p.value})});
-  if (!r.ok) { lerr.textContent = 'Credenciales inválidas'; return; }
-  sessionStorage.setItem('tok', (await r.json()).token);
-  p.value = ''; lerr.textContent = ''; show();
-}
-
-function logout() {
-  sessionStorage.removeItem('tok'); clearInterval(timer);
-  login.style.display = 'block'; app.style.display = 'none';
-}
-
-async function load() {
-  plantas.innerHTML = (await api('/api/plantas')).map(x =>
-    `<div class="card"><b>${esc(x.entity_id)}</b> — ${esc(x.temperature)} °C · ${esc(x.humidity)} % HR · ${esc(x.luminosity)} lux · suelo ${esc(x.soil_moisture)} %<br><small>${esc(x.ts)}</small></div>`).join('') || 'Sin datos todavía';
-  alertas.innerHTML = (await api('/api/alertas')).map(a =>
-    `<div class="${a.severidad === 'error' ? 'error' : 'warning'}">[${esc(a.severidad)}] ${esc(a.entity_id)}: ${esc(a.mensaje)} <small>${esc(a.ts)}</small></div>`).join('') || 'Sin alertas';
-}
-
-async function ask() {
-  r.textContent = '...';
-  try { r.textContent = (await api('/api/chat', {pregunta: q.value})).respuesta; }
-  catch (e) { r.textContent = 'Error consultando a la IA'; }
-}
-
-function show() {
-  login.style.display = 'none'; app.style.display = 'block';
-  load().catch(() => {}); timer = setInterval(() => load().catch(() => {}), 30000);
-}
-if (tok()) show();
-</script>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Monitor Botánico Inteligente</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
 </html>
