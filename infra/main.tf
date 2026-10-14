@@ -78,3 +78,14 @@ resource "aws_instance" "plantas" {
 
   tags = { Name = "plantas-iot" }
 }
+
+# IP fija: sobrevive a detener/iniciar y a recrear la instancia (terraform apply -replace)
+resource "aws_eip" "plantas" {
+  domain = "vpc"
+  tags   = { Name = "plantas-iot" }
+}
+
+resource "aws_eip_association" "plantas" {
+  instance_id   = aws_instance.plantas.id
+  allocation_id = aws_eip.plantas.id
+}
