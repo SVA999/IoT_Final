@@ -6,3 +6,5 @@ __pycache__/
 *.tfstate*
 node_modules/
 dist/
+infra/labsuser.pem
+infra/.terraform.lock.hcl
