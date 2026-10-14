@@ -5,7 +5,7 @@ set -ex
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y docker.io docker-compose-v2 git curl
+apt-get install -y docker.io docker-compose-v2 git curl openssl
 
 # CrateDB exige este parametro
 echo "vm.max_map_count=262144" >> /etc/sysctl.conf
@@ -20,7 +20,11 @@ cat > .env <<ENV
 DWH_USER=dwh
 DWH_PASSWORD=${dwh_password}
 DWH_DB=plantas
-AI_PROVIDER=none
+FRONT_USER=${front_user}
+FRONT_PASSWORD=${front_password}
+AUTH_SECRET=$(openssl rand -hex 32)
+GEMINI_API_KEY=${gemini_api_key}
+GEMINI_MODEL=gemini-2.5-flash
 ENV
 chmod 600 .env
 

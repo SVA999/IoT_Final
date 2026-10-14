@@ -31,8 +31,8 @@ resource "aws_security_group" "plantas" {
       ssh     = { port = 22, cidr = var.admin_cidr }
       http    = { port = 80, cidr = "0.0.0.0/0" }
       https   = { port = 443, cidr = "0.0.0.0/0" }
-      orion   = { port = 1036, cidr = var.device_cidr }
-      agente  = { port = 7896, cidr = var.device_cidr }
+      orion   = { port = 1036, cidr = "0.0.0.0/0" }
+      agente  = { port = 7896, cidr = "0.0.0.0/0" }
       crate   = { port = 4200, cidr = var.admin_cidr }
       grafana = { port = 3000, cidr = var.admin_cidr }
     }
@@ -66,7 +66,10 @@ resource "aws_instance" "plantas" {
 
   user_data = templatefile("${path.module}/user_data.sh.tftpl", {
     repo_url     = var.repo_url
-    dwh_password = var.dwh_password
+    dwh_password   = var.dwh_password
+    front_user     = var.front_user
+    front_password = var.front_password
+    gemini_api_key = var.gemini_api_key
   })
   user_data_replace_on_change = true
 

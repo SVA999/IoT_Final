@@ -13,12 +13,6 @@ variable "admin_cidr" {
   type        = string
 }
 
-variable "device_cidr" {
-  description = "Origen permitido hacia Orion (1036) y Agente (7896): IP del end device/gateway. 0.0.0.0/0 si no se conoce."
-  type        = string
-  default     = "0.0.0.0/0"
-}
-
 variable "repo_url" {
   description = "URL https del repo con este proyecto (publico, o con token embebido)"
   type        = string
@@ -28,6 +22,24 @@ variable "dwh_password" {
   description = "Password del Postgres DWH"
   type        = string
   sensitive   = true
+}
+
+variable "front_user" {
+  type    = string
+  default = "admin"
+}
+
+variable "front_password" {
+  description = "Password de acceso al front"
+  type        = string
+  sensitive   = true
+}
+
+variable "gemini_api_key" {
+  description = "API key de Gemini (https://aistudio.google.com/apikey). Vacia = chat deshabilitado"
+  type        = string
+  sensitive   = true
+  default     = ""
 }
 
 variable "ubuntu_version" {

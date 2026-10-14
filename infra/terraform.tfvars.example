@@ -2,6 +2,8 @@
 region       = "us-east-1"
 key_name     = "mi-keypair"
 admin_cidr   = "190.0.0.1/32"      # tu IP publica
-device_cidr  = "0.0.0.0/0"         # IP del device/gateway cuando se conozca
 repo_url     = "https://github.com/USUARIO/IoT_Final.git"
 dwh_password = "cambiame"
+front_password = "cambiame"
+front_user     = "admin"
+gemini_api_key = ""   # opcional; https://aistudio.google.com/apikey

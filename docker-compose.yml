@@ -89,9 +89,11 @@ services:
     expose: ["8000"]                # solo el front (nginx) la consume
     environment:
       - DWH_DSN=postgresql://${DWH_USER:-dwh}:${DWH_PASSWORD}@dwh:5432/${DWH_DB:-plantas}
-      - AI_PROVIDER=${AI_PROVIDER:-none}        # none | anthropic | openai | gemini
-      - AI_API_KEY=${AI_API_KEY:-}
-      - AI_MODEL=${AI_MODEL:-}
+      - FRONT_USER=${FRONT_USER:-admin}
+      - FRONT_PASSWORD=${FRONT_PASSWORD:?define FRONT_PASSWORD en .env}
+      - AUTH_SECRET=${AUTH_SECRET:?define AUTH_SECRET en .env}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
 
   # ---------- Presentacion ----------
   frontend:

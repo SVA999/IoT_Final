@@ -36,8 +36,8 @@ Basada en el diagrama de la pizarra del profesor ("Agricultura"). Los otros proy
 | CrateDB | `crate-db` | CrateDB | Histórico **crudo** |
 | Limpiar / Analizar | `etl` | Python | Limpia rangos, calcula agregados y alertas |
 | PostgreSQL | `dwh` | Postgres 16 | Datos limpios, resúmenes, alertas |
-| API | `api` | FastAPI | REST + `/api/chat` hacia la IA |
-| Front (80/443) | `frontend` | nginx + HTML/JS | Estado, alertas, chat |
+| API + IA | `api` | FastAPI + **Gemini** (`GEMINI_API_KEY`) | REST protegida con login (token firmado) + `/api/chat` |
+| Front + Auth (80/443) | `frontend` | nginx + HTML/JS | Login sencillo (`FRONT_USER`/`FRONT_PASSWORD`), estado, alertas, chat |
 | (lazo inferior) | ETL → Orion | HTTP | La alerta se publica como entidad `PlantAlert` |
 
 **Decisiones**
@@ -79,6 +79,6 @@ Todo esto está automatizado en `doc/provisionar.sh <IP>`.
 1. **Contrato con el end device:** debe publicar JSON al agente (`POST :7896/iot/json?k=plantas2026&i=planta01`) con las claves `t`, `h`, `l`, `s`, `loc`. Confirmar con el otro equipo.
 2. **Transporte:** si el device usa LoRa, hace falta un gateway LoRa→HTTP hacia el agente; si usa WiFi, publica directo.
 3. **Puerto "5555"** que aparece junto al Agente en la pizarra: confirmar con el profesor (aquí se usó 7896, el HTTP sur estándar del agente JSON).
-4. **IA:** `ask_llm()` en `app/api_ai/main.py` es el único punto a implementar cuando se elija proveedor (variables `AI_*` en `.env`).
 5. **HTTPS (443):** certificado (Let's Encrypt / ALB) para el front.
-7. Autenticación en API/front y Orion (hoy abiertos) si el proyecto pasa de demo.
+7. Fuera de alcance por decisión del equipo: rama LoRa (ChirpStack/InfluxDB), Airflow/NiFi, Redis, MCP y módulo de Gestión de la pizarra. El end device y sus gateways son de otro equipo.
+8. HTTPS y autenticación en Orion si pasa de demo.
