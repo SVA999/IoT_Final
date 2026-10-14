@@ -71,6 +71,7 @@ resource "aws_instance" "plantas" {
     front_user     = var.front_user
     front_password = var.front_password
     gemini_api_key = var.gemini_api_key
+    crate_password = var.crate_password
   })
   user_data_replace_on_change = true
 

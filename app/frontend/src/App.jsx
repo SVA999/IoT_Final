@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { Component, useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
   Thermometer, Droplets, Sun, Sprout, Activity,
@@ -215,10 +215,14 @@ const Dashboard = ({ onLogout }) => {
     try {
       texto = await chat(pregunta, plantaId);
     } catch (err) {
-      texto = err.response?.status === 503
-        ? 'La IA no está configurada en el servidor (falta GEMINI_API_KEY).'
+      const st = err.response?.status;
+      texto = st === 503 ? 'La IA no está configurada o la base de datos no está disponible.'
+        : st === 401 ? 'La sesión venció. Inicie sesión de nuevo.'
+        : st === 502 || st === 504 ? 'La IA (Gemini) no respondió correctamente. Intente de nuevo.'
+        : err.code === 'ECONNABORTED' ? 'La IA tardó demasiado en responder. Intente de nuevo.'
         : 'No se pudo obtener respuesta de la IA. Intente de nuevo.';
     }
+    if (typeof texto !== 'string' || !texto) texto = 'La IA no devolvió contenido.';
     setMensajes((prev) => [...prev, { id: Date.now() + 1, sender: 'ai', text: texto }]);
     setEnviando(false);
   };
@@ -372,16 +376,31 @@ const Dashboard = ({ onLogout }) => {
 // ==========================================
 // 3. ENRUTADOR PRINCIPAL
 // ==========================================
+class ErrorBoundary extends Component {
+  state = { error: null };
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-[#f4f7f5] p-6 text-center">
+        <p className="text-gray-700 font-semibold">Ocurrió un error inesperado en la pantalla.</p>
+        <button onClick={() => window.location.reload()}
+          className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl hover:bg-emerald-700">Recargar</button>
+      </div>
+    );
+  }
+}
+
 export default function App() {
   const [autenticado, setAutenticado] = useState(() => !!getToken());
   const salir = () => { clearToken(); setAutenticado(false); };
 
   // Token vencido o inválido: la API responde 401 y se vuelve al login
-  useEffect(() => { onUnauthorized(salir); }, []);
+  useEffect(() => onUnauthorized(salir), []);
 
-  return autenticado ? (
-    <Dashboard onLogout={salir} />
-  ) : (
-    <LoginScreen onLogin={() => setAutenticado(true)} />
+  return (
+    <ErrorBoundary>
+      {autenticado ? <Dashboard onLogout={salir} /> : <LoginScreen onLogin={() => setAutenticado(true)} />}
+    </ErrorBoundary>
   );
 }

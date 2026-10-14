@@ -53,6 +53,8 @@ services:
     expose: ["8668"]
     environment:
       - CRATE_HOST=crate-db
+      - CRATE_DB_USER=crate
+      - CRATE_DB_PASS=${CRATE_PASSWORD:?define CRATE_PASSWORD en .env}
       - LOGLEVEL=INFO
 
   crate-db:
@@ -62,7 +64,13 @@ services:
     ports:
       - "4200:4200"                 # Admin UI / HTTP
     expose: ["4300", "5432"]        # 5432 de Crate NO se publica (choca con el DWH)
-    command: crate -Cauth.host_based.enabled=false -Ccluster.name=plantcluster -Chttp.cors.enabled=true -Chttp.cors.allow-origin="*"
+    # Auth: el usuario 'crate' entra sin clave solo desde dentro del contenedor (_local_, usado por doc/crate_auth.sh);
+    # el resto (UI, QuantumLeap, ETL, Grafana) debe usar usuario+clave.
+    command: >
+      crate -Cauth.host_based.enabled=true
+      -Cauth.host_based.config.0.user=crate -Cauth.host_based.config.0.address=_local_ -Cauth.host_based.config.0.method=trust
+      -Cauth.host_based.config.99.method=password
+      -Ccluster.name=plantcluster -Chttp.cors.enabled=true -Chttp.cors.allow-origin="*"
     environment:
       - CRATE_HEAP_SIZE=2g          # t3.large = 8 GB RAM compartidos
     volumes: [crate-db:/data]
@@ -72,7 +80,8 @@ services:
     image: postgres:16
     container_name: dwh-postgres
     restart: unless-stopped
-    expose: ["5432"]                # solo red interna
+    ports:
+      - "127.0.0.1:5432:5432"       # solo loopback del host: DataGrip entra por tunel SSH
     environment:
       - POSTGRES_USER=${DWH_USER:-dwh}
       - POSTGRES_PASSWORD=${DWH_PASSWORD:?define DWH_PASSWORD en .env}
@@ -88,6 +97,8 @@ services:
     depends_on: [crate-db, dwh, orion]
     environment:
       - CRATE_URL=http://crate-db:4200/_sql
+      - CRATE_USER=crate
+      - CRATE_PASSWORD=${CRATE_PASSWORD:?define CRATE_PASSWORD en .env}
       - DWH_DSN=postgresql://${DWH_USER:-dwh}:${DWH_PASSWORD}@dwh:5432/${DWH_DB:-plantas}
       - ORION_URL=http://orion:1026
       - ETL_INTERVAL_SECONDS=300

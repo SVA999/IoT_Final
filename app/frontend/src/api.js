@@ -21,15 +21,17 @@ export const login = (usuario, password) =>
 export const getPlantas = () => http.get('/plantas').then((r) => r.data);
 export const getAlertas = (limit = 20) => http.get('/alertas', { params: { limit } }).then((r) => r.data);
 export const chat = (pregunta, planta) =>
-  http.post('/chat', { pregunta, planta }, { timeout: 70000 }).then((r) => r.data.respuesta);
+  http.post('/chat', { pregunta, planta }, { timeout: 70000 }).then((r) => String(r.data?.respuesta ?? ''));
 
-// Para que la app cierre sesion cuando la API responde 401 (token vencido)
+// Para que la app cierre sesion cuando la API responde 401 (token vencido).
+// Devuelve la funcion para quitar el interceptor (evita que se acumulen al re-renderizar).
 export const onUnauthorized = (fn) => {
-  http.interceptors.response.use(
+  const id = http.interceptors.response.use(
     (r) => r,
     (err) => {
       if (err.response?.status === 401) fn();
       return Promise.reject(err);
     },
   );
+  return () => http.interceptors.response.eject(id);
 };

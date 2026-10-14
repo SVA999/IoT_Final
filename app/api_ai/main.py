@@ -88,20 +88,31 @@ class Pregunta(BaseModel):
 def ask_gemini(prompt: str) -> str:
     if not GEMINI_API_KEY:
         raise HTTPException(status_code=503, detail="GEMINI_API_KEY no configurada")
-    r = httpx.post(
-        f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
-        headers={"x-goog-api-key": GEMINI_API_KEY},
-        json={"contents": [{"parts": [{"text": prompt}]}]},
-        timeout=60,
-    )
+    try:
+        r = httpx.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
+            headers={"x-goog-api-key": GEMINI_API_KEY},
+            json={"contents": [{"parts": [{"text": prompt}]}]},
+            timeout=60,
+        )
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=504, detail=f"No se pudo contactar a Gemini: {e.__class__.__name__}")
     if r.status_code != 200:
         raise HTTPException(status_code=502, detail=f"Gemini respondio {r.status_code}")
-    return r.json()["candidates"][0]["content"]["parts"][0]["text"]
+    try:
+        parts = r.json()["candidates"][0]["content"]["parts"]
+        return "".join(p.get("text", "") for p in parts) or "La IA no genero respuesta."
+    except (KeyError, IndexError, TypeError, ValueError):
+        # p. ej. respuesta bloqueada por filtros de seguridad: no trae 'candidates'
+        raise HTTPException(status_code=502, detail="Gemini devolvio una respuesta sin contenido")
 
 
 @app.post("/api/chat", dependencies=[Depends(require_auth)])
 def chat(p: Pregunta):
-    ctx = {"ultimas_lecturas": plantas(), "alertas_recientes": alertas(20)}
+    try:
+        ctx = {"ultimas_lecturas": plantas(), "alertas_recientes": alertas(20)}
+    except psycopg.Error:
+        raise HTTPException(status_code=503, detail="Base de datos no disponible")
     prompt = ("Eres un asistente agronomo. Responde en español, breve y accionable, usando solo "
               f"estos datos del sistema de monitoreo: {ctx}\n"
               f"Planta: {p.planta or 'todas'}\nPregunta: {p.pregunta}")

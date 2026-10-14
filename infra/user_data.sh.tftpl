@@ -23,11 +23,14 @@ DWH_DB=plantas
 FRONT_USER=${front_user}
 FRONT_PASSWORD=${front_password}
 AUTH_SECRET=$(openssl rand -hex 32)
+CRATE_PASSWORD=${crate_password}
 GEMINI_API_KEY=${gemini_api_key}
 GEMINI_MODEL=gemini-2.5-flash
 ENV
 chmod 600 .env
 
+docker compose up -d --build crate-db
+bash doc/crate_auth.sh
 docker compose up -d --build
 
 # Esperar al Agente IoT y provisionar (grupo de servicio, dispositivo, suscripcion)

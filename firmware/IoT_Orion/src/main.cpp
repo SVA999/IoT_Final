@@ -8,7 +8,7 @@
 // Configuracion Wi-Fi y Servidor
 const char* SSID_WIFI     = "UPBWiFi";
 const char* PASSWORD_WIFI = "";
-const char* URL_SERVIDOR = "http://34.229.115.185:7896/iot/json?k=plantas2026&i=planta01";
+const char* URL_SERVIDOR = "http://23.20.62.1:7896/iot/json?k=plantas2026&i=planta01";
 
 // Intervalo de lectura/envio: 5 minutos
 #define INTERVALO_LECTURA_MS (5UL * 60UL * 1000UL)

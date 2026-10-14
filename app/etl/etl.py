@@ -9,6 +9,7 @@ CRATE_URL = os.environ["CRATE_URL"]
 TABLE = os.environ["CRATE_TABLE"]
 DSN = os.environ["DWH_DSN"]
 ORION = os.environ["ORION_URL"]
+CRATE_AUTH = (os.environ.get("CRATE_USER", "crate"), os.environ.get("CRATE_PASSWORD", ""))
 INTERVAL = int(os.environ.get("ETL_INTERVAL_SECONDS", "300"))
 
 # Rangos fisicos validos (limpiar) y umbrales de advertencia (analizar). Ajustar al cultivo.
@@ -19,7 +20,7 @@ WARN = {"temperature": (10, 35), "humidity": (30, 90), "luminosity": (1000, 8000
 def extract(since):
     q = (f"SELECT entity_id, time_index, temperature, humidity, luminosity, soilmoisture "
          f"FROM {TABLE} WHERE time_index > ? ORDER BY time_index LIMIT 5000")
-    r = requests.post(CRATE_URL, json={"stmt": q, "args": [since]}, timeout=30)
+    r = requests.post(CRATE_URL, json={"stmt": q, "args": [since]}, auth=CRATE_AUTH, timeout=30)
     r.raise_for_status()
     return r.json()["rows"]
 
