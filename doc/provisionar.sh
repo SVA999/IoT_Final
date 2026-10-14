@@ -20,25 +20,43 @@ del() {  # del <url>   (ignora 404: puede no existir)
   curl -s -o /dev/null -X DELETE "$1" -H 'fiware-service: openiot' -H 'fiware-servicepath: /'
 }
 
-# 0) Limpiar registros viejos o mal mapeados (un 409 escondia dispositivos con atributos sin mapear)
-del "http://$HOST:4041/iot/devices/planta01"
-del "http://$HOST:4041/iot/services?resource=/iot/json&apikey=$APIKEY"
-del "http://$HOST:1036/v2/entities/PlantSensor:planta01?type=PlantSensor"   # entidad autocreada sin mapeo
-del "http://$HOST:1036/v2/entities/planta01?type=PlantSensor"
+# 0-2) Grupo + dispositivo. El ESP32 envia cada ~30 s: si llega una lectura entre el borrado y la
+#      recreacion, el agente autocrea un duplicado "PlantSensor:planta01" sin mapeo. Por eso se borran TODOS
+#      los dispositivos con ese id, se recrea y se VERIFICA que quede uno solo con el mapeo correcto.
+device_ok() {
+  local out; out=$(curl -s "http://$HOST:4041/iot/devices" -H 'fiware-service: openiot' -H 'fiware-servicepath: /')
+  [ "$(echo "$out" | grep -o '"device_id"' | wc -l)" = "1" ] && echo "$out" | grep -q '"entity_name":"planta01"'
+}
 
-# 1) Grupo de servicio (apikey -> tipo de entidad)
-post "grupo de servicio" "http://$HOST:4041/iot/services" '{
-  "services": [{"apikey": "'$APIKEY'", "cbroker": "http://orion:1026",
-                "entity_type": "PlantSensor", "resource": "/iot/json"}]}'
+for intento in 1 2 3 4 5; do
+  for i in 1 2 3 4 5; do   # puede haber varios dispositivos con el mismo id
+    c=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "http://$HOST:4041/iot/devices/planta01"         -H 'fiware-service: openiot' -H 'fiware-servicepath: /')
+    [ "$c" = "404" ] && break
+  done
+  del "http://$HOST:4041/iot/services?resource=/iot/json&apikey=$APIKEY"
 
-# 2) Dispositivo planta01. object_id = clave EXACTA del JSON que envia el firmware.
-post "dispositivo planta01" "http://$HOST:4041/iot/devices" '{
-  "devices": [{"device_id": "planta01", "entity_name": "planta01", "entity_type": "PlantSensor",
-    "attributes": [
-      {"object_id": "temperatura_aire",   "name": "temperature",  "type": "Number"},
-      {"object_id": "humedad_aire",       "name": "humidity",     "type": "Number"},
-      {"object_id": "luz_lux",            "name": "luminosity",   "type": "Number"},
-      {"object_id": "humedad_suelo_pct",  "name": "soilMoisture", "type": "Number"}]}]}'
+  post "grupo de servicio" "http://$HOST:4041/iot/services" '{
+    "services": [{"apikey": "'$APIKEY'", "cbroker": "http://orion:1026",
+                  "entity_type": "PlantSensor", "resource": "/iot/json"}]}'
+
+  # object_id = clave EXACTA del JSON que envia el firmware.
+  post "dispositivo planta01" "http://$HOST:4041/iot/devices" '{
+    "devices": [{"device_id": "planta01", "entity_name": "planta01", "entity_type": "PlantSensor",
+      "attributes": [
+        {"object_id": "temperatura_aire",   "name": "temperature",  "type": "Number"},
+        {"object_id": "humedad_aire",       "name": "humidity",     "type": "Number"},
+        {"object_id": "luz_lux",            "name": "luminosity",   "type": "Number"},
+        {"object_id": "humedad_suelo_pct",  "name": "soilMoisture", "type": "Number"}]}]}'
+
+  sleep 2
+  if device_ok; then echo "OK   dispositivo unico y mapeado"; break; fi
+  echo "AVISO: aparecio un dispositivo duplicado, reintentando ($intento/5)"
+  FALLO=0
+done
+device_ok || { echo "FALLO: sigue habiendo dispositivos duplicados"; FALLO=1; }
+
+# Entidades autocreadas sin mapeo (si las hay)
+del "http://$HOST:1036/v2/entities/PlantSensor:planta01?type=PlantSensor"
 
 # 3) Suscripcion Orion -> QuantumLeap (tabla: mtopeniot.etplantsensor). Solo si no existe ya (evita duplicados).
 if curl -s "http://$HOST:1036/v2/subscriptions" -H 'fiware-service: openiot' -H 'fiware-servicepath: /'      | grep -q 'Historico de plantas en QuantumLeap'; then

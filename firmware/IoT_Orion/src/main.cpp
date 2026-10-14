@@ -11,7 +11,7 @@ const char* PASSWORD_WIFI = "";
 const char* URL_SERVIDOR = "http://23.20.62.1:7896/iot/json?k=plantas2026&i=planta01";
 
 // Intervalo de lectura/envio: 5 minutos
-#define INTERVALO_LECTURA_MS (5UL * 60UL * 1000UL)
+#define INTERVALO_LECTURA_MS (30UL * 1000UL)
 
 // I2C
 #define SDA_PIN 21
