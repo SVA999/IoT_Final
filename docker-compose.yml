@@ -1,6 +1,6 @@
 # Ejemplo de como desplegar en un ambiente de prueba un framework FIWARE para 
 # una aplicacion de ciudad inteligente / Internet de las Cosas
-# 
+#
 # En este ejemplo vamos a usar un sensor que lee la temperatura de una termocupla
 # y la almacena en una base de datos en un servidor FiWARE en la Nube
 # sudo sysctl -w vm.max_map_count=262144
@@ -28,7 +28,7 @@ services:
       - "1026:1026" # localhost:1026
     command: -dbhost mongo-db -logLevel DEBUG
     healthcheck:
-      test: ["CMD-SHELL", "curl --fail -s http://localhost:1026/version || exit 1"]
+      test: [ "CMD-SHELL", "curl --fail -s http://localhost:1026/version || exit 1" ]
       interval: 10m0s
       timeout: 30s
       retries: 5
@@ -47,7 +47,6 @@ services:
     environment:
       - CRATE_HOST=crate-db
       - LOGLEVEL=DEBUG
-
 
   # Bases de datos
   mongo-db:
@@ -77,6 +76,20 @@ services:
     volumes:
       - crate-db:/data
 
+  # Data Warehouse
+  postgres-dwh:
+    image: postgres:15
+    container_name: dwh-postgres
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin0102
+      POSTGRES_DB: plantas_dwh
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./dwh/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - default
+
   # visualizacion
   grafana:
     image: grafana/grafana
@@ -87,6 +100,27 @@ services:
       - "3000:3000"
     volumes:
       - grafana:/var/lib/grafana
+
+  # ETL Job
+  etl-job:
+    build: ./etl
+    container_name: etl_processor
+    depends_on:
+      - crate-db
+      - postgres-dwh
+    networks:
+      - default
+
+  # API Backend
+  api-backend:
+    build: ./api_ai
+    container_name: api_ai_backend
+    depends_on:
+      - postgres-dwh
+    ports:
+      - "8000:8000" # Opcional, para el Frontend
+    networks:
+      - default
 
 networks:
   default:
