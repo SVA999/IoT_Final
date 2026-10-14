@@ -1,134 +1,116 @@
-# Ejemplo de como desplegar en un ambiente de prueba un framework FIWARE para 
-# una aplicacion de ciudad inteligente / Internet de las Cosas
-#
-# En este ejemplo vamos a usar un sensor que lee la temperatura de una termocupla
-# y la almacena en una base de datos en un servidor FiWARE en la Nube
-# sudo sysctl -w vm.max_map_count=262144
-version: "3.8"
+# Plataforma de monitoreo de plantas (Agricultura) - arquitectura de la pizarra:
+# Sensor -> Agente IoT -> Orion(+Mongo) -> QuantumLeap -> CrateDB -> ETL (limpiar/analizar)
+#        -> Postgres (DWH) -> API (+IA) -> Front        (+ Grafana opcional)
+# Requisito en el host:  sudo sysctl -w vm.max_map_count=262144
 services:
-  frontend:
-    build: ./app
-    container_name: frontend
-    hostname: pagina
+  # ---------- Ingesta ----------
+  iot-agent:
+    image: fiware/iotagent-json
+    container_name: iot-agent
+    depends_on: [orion, mongo-db]
     ports:
-      - "80:80"
-    command: python3 app.py
-  # Orion es el motor principal, el agente, el context broker
-  orion:
-    image: fiware/orion-ld
-    hostname: orion
-    container_name: orion
-    depends_on:
-      - mongo-db
-    networks:
-      - default
-    expose:
-      - "1026"
-    ports:
-      - "1026:1026" # localhost:1026
-    command: -dbhost mongo-db -logLevel DEBUG
-    healthcheck:
-      test: [ "CMD-SHELL", "curl --fail -s http://localhost:1026/version || exit 1" ]
-      interval: 10m0s
-      timeout: 30s
-      retries: 5
-      start_period: 30s
-
-  #Quantum Leap
-  quantumleap:
-    image: orchestracities/quantumleap
-    hostname: quantumleap
-    container_name: fiware-quantumleap
-    ports:
-      - "8668:8668"
-    depends_on:
-      - crate-db
-      #- redis-db
+      - "4041:4041"   # North (admin: aprovisionar dispositivos)
+      - "7896:7896"   # South HTTP (el gateway LoRa/WiFi publica aqui)
     environment:
-      - CRATE_HOST=crate-db
-      - LOGLEVEL=DEBUG
+      - IOTA_CB_HOST=orion
+      - IOTA_CB_PORT=1026
+      - IOTA_NORTH_PORT=4041
+      - IOTA_REGISTRY_TYPE=mongodb
+      - IOTA_MONGO_HOST=mongo-db
+      - IOTA_MONGO_DB=iotagentjson
+      - IOTA_HTTP_PORT=7896
+      - IOTA_PROVIDER_URL=http://iot-agent:4041
 
-  # Bases de datos
+  # ---------- Contexto ----------
+  orion:
+    image: fiware/orion            # NGSI v2 (QuantumLeap lo requiere); orion-ld solo si migran a NGSI-LD
+    container_name: orion
+    depends_on: [mongo-db]
+    ports:
+      - "1036:1026"   # puerto 1036 abierto en el Security Group -> 1026 interno
+    command: -dbURI mongodb://mongo-db -logLevel INFO
+
   mongo-db:
     image: mongo:4.4
-    hostname: mongo-db
     container_name: db-mongo
-    expose:
-      - "27017"
-    ports:
-      - "27017:27017"
-    networks:
-      - default
-    volumes:
-      - mongo-db:/data/db
+    expose: ["27017"]               # solo red interna
+    volumes: [mongo-db:/data/db]
+
+  # ---------- Historico crudo ----------
+  quantumleap:
+    image: orchestracities/quantumleap
+    container_name: fiware-quantumleap
+    depends_on: [crate-db]
+    expose: ["8668"]
+    environment:
+      - CRATE_HOST=crate-db
+      - LOGLEVEL=INFO
 
   crate-db:
-    image: crate
-    hostname: crate-db
+    image: crate:5.8
     container_name: db-crate
     ports:
-      - "4200:4200"
-      - "4300:4300"
-      - "5432:5432"
-    command: crate -Cauth.host_based.enabled=false  -Ccluster.name=democluster -Chttp.cors.enabled=true -Chttp.cors.allow-origin="*"
+      - "4200:4200"                 # Admin UI / HTTP
+    expose: ["4300", "5432"]        # 5432 de Crate NO se publica (choca con el DWH)
+    command: crate -Cauth.host_based.enabled=false -Ccluster.name=plantcluster -Chttp.cors.enabled=true -Chttp.cors.allow-origin="*"
     environment:
-      - CRATE_HEAP_SIZE=4g
-    volumes:
-      - crate-db:/data
+      - CRATE_HEAP_SIZE=2g          # t3.large = 8 GB RAM compartidos
+    volumes: [crate-db:/data]
 
-  # Data Warehouse
-  postgres-dwh:
-    image: postgres:15
+  # ---------- Procesamiento y DWH ----------
+  dwh:
+    image: postgres:16
     container_name: dwh-postgres
+    expose: ["5432"]                # solo red interna
     environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin0102
-      POSTGRES_DB: plantas_dwh
+      - POSTGRES_USER=${DWH_USER:-dwh}
+      - POSTGRES_PASSWORD=${DWH_PASSWORD:?define DWH_PASSWORD en .env}
+      - POSTGRES_DB=${DWH_DB:-plantas}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./dwh/init.sql:/docker-entrypoint-initdb.d/init.sql
-    networks:
-      - default
+      - dwh-data:/var/lib/postgresql/data
+      - ./app/dwh/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
 
-  # visualizacion
-  grafana:
+  etl:
+    build: ./app/etl
+    container_name: etl
+    depends_on: [crate-db, dwh, orion]
+    environment:
+      - CRATE_URL=http://crate-db:4200/_sql
+      - DWH_DSN=postgresql://${DWH_USER:-dwh}:${DWH_PASSWORD}@dwh:5432/${DWH_DB:-plantas}
+      - ORION_URL=http://orion:1026
+      - ETL_INTERVAL_SECONDS=300
+      - CRATE_TABLE=mtopeniot.etplantsensor
+
+  # ---------- Logica de negocio + IA ----------
+  api:
+    build: ./app/api_ai
+    container_name: api
+    depends_on: [dwh]
+    expose: ["8000"]                # solo el front (nginx) la consume
+    environment:
+      - DWH_DSN=postgresql://${DWH_USER:-dwh}:${DWH_PASSWORD}@dwh:5432/${DWH_DB:-plantas}
+      - AI_PROVIDER=${AI_PROVIDER:-none}        # none | anthropic | openai | gemini
+      - AI_API_KEY=${AI_API_KEY:-}
+      - AI_MODEL=${AI_MODEL:-}
+
+  # ---------- Presentacion ----------
+  frontend:
+    build: ./app/frontend
+    container_name: frontend
+    depends_on: [api]
+    ports:
+      - "80:80"
+
+  grafana:                           # opcional (admin/tecnico)
     image: grafana/grafana
     container_name: grafana
-    depends_on:
-      - crate-db
+    depends_on: [crate-db, dwh]
     ports:
       - "3000:3000"
-    volumes:
-      - grafana:/var/lib/grafana
-
-  # ETL Job
-  etl-job:
-    build: ./etl
-    container_name: etl_processor
-    depends_on:
-      - crate-db
-      - postgres-dwh
-    networks:
-      - default
-
-  # API Backend
-  api-backend:
-    build: ./api_ai
-    container_name: api_ai_backend
-    depends_on:
-      - postgres-dwh
-    ports:
-      - "8000:8000" # Opcional, para el Frontend
-    networks:
-      - default
-
-networks:
-  default:
-    ipam:
-      config:
-        - subnet: 172.19.1.0/24
+    volumes: [grafana:/var/lib/grafana]
 
 volumes:
-  mongo-db: ~
-  crate-db: ~
-  grafana: ~
+  mongo-db:
+  crate-db:
+  dwh-data:
+  grafana:

@@ -1,0 +1,35 @@
+#!/bin/bash
+# Se ejecuta una vez como root en el primer arranque. Log: /var/log/plantas-bootstrap.log
+exec > /var/log/plantas-bootstrap.log 2>&1
+set -ex
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y docker.io docker-compose-v2 git curl
+
+# CrateDB exige este parametro
+echo "vm.max_map_count=262144" >> /etc/sysctl.conf
+sysctl -w vm.max_map_count=262144
+
+systemctl enable --now docker
+
+cd /opt
+git clone ${repo_url} IoT_Final
+cd IoT_Final
+cat > .env <<ENV
+DWH_USER=dwh
+DWH_PASSWORD=${dwh_password}
+DWH_DB=plantas
+AI_PROVIDER=none
+ENV
+chmod 600 .env
+
+docker compose up -d --build
+
+# Esperar al Agente IoT y provisionar (grupo de servicio, dispositivo, suscripcion)
+for i in $(seq 1 60); do
+  curl -sf http://localhost:4041/iot/about && break
+  sleep 5
+done
+bash doc/provisionar.sh localhost
+echo "BOOTSTRAP OK"
