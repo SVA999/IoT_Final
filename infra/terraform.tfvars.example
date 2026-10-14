@@ -1,11 +1,10 @@
 # Copiar a terraform.tfvars (ignorado por git) y completar
-region       = "us-east-1"
-key_name     = "vockey"            # llave de AWS Academy
-admin_cidr   = "190.0.0.1/32"      # tu IP publica
-repo_url     = "https://github.com/USUARIO/IoT_Final.git"
-dwh_password = "cambiame"
-front_password = "cambiame"
+region         = "us-east-1"
+key_name       = "vockey"                  # llave de AWS Academy
+admin_cidr     = "0.0.0.0/0"               # quien puede entrar a SSH, Crate (4200) y Grafana (3000). Mejor "TU_IP/32"
+repo_url       = "https://github.com/USUARIO/IoT_Final.git"
+dwh_password   = "cambiame"
+crate_password = "cambiame"                # sin comillas simples ni $
 front_user     = "admin"
-gemini_api_key = ""   # opcional; https://aistudio.google.com/apikey
-
-crate_password = "CAMBIAME"
+front_password = "cambiame"
+gemini_api_key = ""                        # opcional; https://aistudio.google.com/apikey

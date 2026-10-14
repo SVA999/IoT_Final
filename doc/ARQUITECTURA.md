@@ -33,7 +33,7 @@ Basada en el diagrama de la pizarra del profesor ("Agricultura"). Los otros proy
 | Agente | `iot-agent` | `fiware/iotagent-json` | Traduce JSON del dispositivo a entidades NGSI |
 | O + MongoDB | `orion`, `mongo-db` | `fiware/orion` (NGSI v2) | Estado actual de cada planta |
 | QL | `quantumleap` | orchestracities/quantumleap | Suscripción Orion → serie de tiempo |
-| CrateDB | `crate-db` | CrateDB | Histórico **crudo** |
+| CrateDB | `crate-db` | CrateDB | Histórico **crudo**; con autenticación (usuario `iot`, clave `CRATE_PASSWORD`) |
 | Limpiar / Analizar | `etl` | Python | Limpia rangos, calcula agregados y alertas |
 | PostgreSQL | `dwh` | Postgres 16 | Datos limpios, resúmenes, alertas |
 | API + IA | `api` | FastAPI + **Gemini** (`GEMINI_API_KEY`) | REST protegida con login (token firmado) + `/api/chat` |
@@ -58,8 +58,9 @@ Reglas del ETL (`app/etl/etl.py`, editar umbrales por cultivo):
 
 ## 4. Seguridad de red (EC2 t3.large)
 
-Security Group: **22** (solo tu IP), **80/443** (público), **1036** (Orion; idealmente solo IP del gateway), **7896** (agente, solo gateway), **4200** y **3000** (solo tu IP, o cerrarlos en producción).
-Internos sin publicar: Mongo, Postgres DWH, QuantumLeap, API.
+Security Group: **22**, **4200** y **3000** (según `admin_cidr`; mejor solo tu IP), **80/443** (público), **1036** (Orion) y **7896** (agente, donde publica el sensor).
+Internos sin publicar: Mongo, QuantumLeap, API. Postgres DWH solo en `127.0.0.1:5432` de la EC2 (acceso por túnel SSH, p. ej. DataGrip).
+La EC2 tiene **IP elástica** (Terraform): no cambia al reiniciar ni al recrear la instancia.
 
 **Conflicto resuelto:** CrateDB expone 5432 (wire protocol Postgres), igual que el DWH. Crate ya no publica 5432 y el DWH es solo interno.
 
@@ -68,11 +69,13 @@ Internos sin publicar: Mongo, Postgres DWH, QuantumLeap, API.
 ## 5. Puesta en marcha
 
 ```bash
-cp .env.example .env        # y cambiar DWH_PASSWORD
+cp .env.example .env        # y cambiar las claves
+docker compose up -d --build crate-db
+bash doc/crate_auth.sh      # usuario "iot" de CrateDB
 docker compose up -d --build
+bash doc/provisionar.sh localhost
 ```
-Luego ejecutar `doc/provisionar.sh` (grupo de servicio, dispositivo `planta01` y suscripción Orion→QuantumLeap; referencia: `doc/ejemplocomandos.txt`, usar `"type": "PlantSensor"`) y provisionar el dispositivo en el agente (`:4041`).
-Todo esto está automatizado en `doc/provisionar.sh <IP>`.
+`doc/provisionar.sh` (idempotente) registra el grupo de servicio, el dispositivo `planta01` (con `apikey` y mapeo de atributos) y la suscripción Orion→QuantumLeap. Con Terraform todo esto lo hace el `user_data` al crear la instancia (ver `GUIA_DESPLIEGUE_AWS.md`).
 
 ## 6. Pendientes / por confirmar
 

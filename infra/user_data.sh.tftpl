@@ -33,9 +33,9 @@ docker compose up -d --build crate-db
 bash doc/crate_auth.sh
 docker compose up -d --build
 
-# Esperar al Agente IoT y provisionar (grupo de servicio, dispositivo, suscripcion)
+# Esperar al Agente IoT y a Orion, y provisionar (grupo de servicio, dispositivo, suscripcion)
 for i in $(seq 1 60); do
-  curl -sf http://localhost:4041/iot/about && break
+  curl -sf http://localhost:4041/iot/about && curl -sf http://localhost:1036/version && break
   sleep 5
 done
 bash doc/provisionar.sh localhost
