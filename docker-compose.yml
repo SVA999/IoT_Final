@@ -7,6 +7,7 @@ services:
   iot-agent:
     image: fiware/iotagent-json
     container_name: iot-agent
+    restart: unless-stopped
     depends_on: [orion, mongo-db]
     ports:
       - "4041:4041"   # North (admin: aprovisionar dispositivos)
@@ -25,6 +26,7 @@ services:
   orion:
     image: fiware/orion            # NGSI v2 (QuantumLeap lo requiere); orion-ld solo si migran a NGSI-LD
     container_name: orion
+    restart: unless-stopped
     depends_on: [mongo-db]
     ports:
       - "1036:1026"   # puerto 1036 abierto en el Security Group -> 1026 interno
@@ -33,6 +35,7 @@ services:
   mongo-db:
     image: mongo:4.4
     container_name: db-mongo
+    restart: unless-stopped
     expose: ["27017"]               # solo red interna
     volumes: [mongo-db:/data/db]
 
@@ -40,6 +43,7 @@ services:
   quantumleap:
     image: orchestracities/quantumleap
     container_name: fiware-quantumleap
+    restart: unless-stopped
     depends_on: [crate-db]
     expose: ["8668"]
     environment:
@@ -49,6 +53,7 @@ services:
   crate-db:
     image: crate:5.8
     container_name: db-crate
+    restart: unless-stopped
     ports:
       - "4200:4200"                 # Admin UI / HTTP
     expose: ["4300", "5432"]        # 5432 de Crate NO se publica (choca con el DWH)
@@ -61,6 +66,7 @@ services:
   dwh:
     image: postgres:16
     container_name: dwh-postgres
+    restart: unless-stopped
     expose: ["5432"]                # solo red interna
     environment:
       - POSTGRES_USER=${DWH_USER:-dwh}
@@ -73,6 +79,7 @@ services:
   etl:
     build: ./app/etl
     container_name: etl
+    restart: unless-stopped
     depends_on: [crate-db, dwh, orion]
     environment:
       - CRATE_URL=http://crate-db:4200/_sql
@@ -85,6 +92,7 @@ services:
   api:
     build: ./app/api_ai
     container_name: api
+    restart: unless-stopped
     depends_on: [dwh]
     expose: ["8000"]                # solo el front (nginx) la consume
     environment:
@@ -99,6 +107,7 @@ services:
   frontend:
     build: ./app/frontend
     container_name: frontend
+    restart: unless-stopped
     depends_on: [api]
     ports:
       - "80:80"
@@ -106,6 +115,7 @@ services:
   grafana:                           # opcional (admin/tecnico)
     image: grafana/grafana
     container_name: grafana
+    restart: unless-stopped
     depends_on: [crate-db, dwh]
     ports:
       - "3000:3000"

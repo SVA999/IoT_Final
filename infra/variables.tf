@@ -1,11 +1,19 @@
 variable "region" {
-  type    = string
-  default = "us-east-1"
+  description = "AWS Academy Learner Lab solo permite us-east-1 (y a veces us-west-2)"
+  type        = string
+  default     = "us-east-1"
 }
 
 variable "key_name" {
-  description = "Nombre de un Key Pair EC2 ya existente (para SSH)"
+  description = "Key Pair EC2 existente. En AWS Academy ya existe 'vockey'"
   type        = string
+  default     = "vockey"
+}
+
+variable "iam_instance_profile" {
+  description = "Instance profile preexistente. En AWS Academy: LabInstanceProfile (rol LabRole)"
+  type        = string
+  default     = "LabInstanceProfile"
 }
 
 variable "admin_cidr" {

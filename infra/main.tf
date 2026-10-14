@@ -57,6 +57,7 @@ resource "aws_instance" "plantas" {
   ami                    = data.aws_ami.ubuntu.id
   instance_type          = var.instance_type
   key_name               = var.key_name
+  iam_instance_profile   = var.iam_instance_profile # AWS Academy: perfil preexistente, no se pueden crear roles
   vpc_security_group_ids = [aws_security_group.plantas.id]
 
   root_block_device {
@@ -73,10 +74,7 @@ resource "aws_instance" "plantas" {
   })
   user_data_replace_on_change = true
 
-  tags = { Name = "plantas-iot" }
-}
+  associate_public_ip_address = true
 
-resource "aws_eip" "plantas" {
-  instance = aws_instance.plantas.id
-  domain   = "vpc"
+  tags = { Name = "plantas-iot" }
 }
