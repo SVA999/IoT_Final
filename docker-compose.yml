@@ -10,17 +10,20 @@ services:
     restart: unless-stopped
     depends_on: [orion, mongo-db]
     ports:
-      - "4041:4041"   # North (admin: aprovisionar dispositivos)
-      - "7896:7896"   # South HTTP (el gateway LoRa/WiFi publica aqui)
+      - "4041:4041"
+      - "7896:7896"
     environment:
       - IOTA_CB_HOST=orion
       - IOTA_CB_PORT=1026
       - IOTA_NORTH_PORT=4041
       - IOTA_REGISTRY_TYPE=mongodb
       - IOTA_MONGO_HOST=mongo-db
+      - IOTA_MONGO_PORT=27017
+      - IOTA_MONGO_URL=mongodb://mongo-db:27017
       - IOTA_MONGO_DB=iotagentjson
       - IOTA_HTTP_PORT=7896
       - IOTA_PROVIDER_URL=http://iot-agent:4041
+      
 
   # ---------- Contexto ----------
   orion:
