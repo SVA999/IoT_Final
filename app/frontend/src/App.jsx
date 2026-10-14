@@ -1,9 +1,16 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  Thermometer, Droplets, Sun, Sprout, Activity, 
-  Bot, Send, Leaf, User, Lock, Loader2, ArrowRight
+import {
+  Thermometer, Droplets, Sun, Sprout, Activity,
+  Bot, Send, Leaf, User, Lock, Loader2, ArrowRight,
+  AlertTriangle, AlertOctagon, LogOut
 } from 'lucide-react';
+import { login, setToken, getToken, clearToken, getPlantas, getAlertas, chat, onUnauthorized } from './api';
+
+const REFRESCO_MS = 30000;
+const LUX_MIN = 1000; // por debajo se considera poca luz (mismo umbral que el ETL)
+const num = (v) => (v == null ? null : Number(v));
+const fmt = (v, d = 0) => (v == null ? '--' : Number(v).toFixed(d));
 
 // ==========================================
 // 1. PANTALLA DE LOGIN (MEJORADA Y SIN EMOJIS)
@@ -14,20 +21,19 @@ const LoginScreen = ({ onLogin }) => {
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
 
-  const manejarIngreso = (e) => {
+  const manejarIngreso = async (e) => {
     e.preventDefault();
     setCargando(true);
     setError('');
-
-    // Simulador de conexión al Backend
-    setTimeout(() => {
-      if (usuario === 'admin' && password === 'iot123') {
-        onLogin();
-      } else {
-        setError('Credenciales incorrectas. Verifique e intente nuevamente.');
-        setCargando(false);
-      }
-    }, 1500);
+    try {
+      setToken(await login(usuario, password));
+      onLogin();
+    } catch (err) {
+      setError(err.response?.status === 401
+        ? 'Credenciales incorrectas. Verifique e intente nuevamente.'
+        : 'No se pudo contactar al servidor. Intente de nuevo.');
+      setCargando(false);
+    }
   };
 
   return (
@@ -130,13 +136,16 @@ const LoginScreen = ({ onLogin }) => {
 // 2. COMPONENTE DEL DASHBOARD (CULTIVO)
 // ==========================================
 
+// Las lecturas pueden venir nulas (sensor con error): solo se penaliza lo que se conoce
 const calcularSalud = (temp, hum_tierra, luz) => {
   let puntos = 100;
-  if (temp > 30 || temp < 15) puntos -= 20;
-  if (temp > 35 || temp < 10) puntos -= 20;
-  if (hum_tierra < 40) puntos -= (40 - hum_tierra) * 2; 
-  if (luz < 30) puntos -= 15;
-  return Math.max(0, Math.min(100, puntos)); 
+  if (temp != null) {
+    if (temp > 30 || temp < 15) puntos -= 20;
+    if (temp > 35 || temp < 10) puntos -= 20;
+  }
+  if (hum_tierra != null && hum_tierra < 40) puntos -= (40 - hum_tierra) * 2;
+  if (luz != null && luz < LUX_MIN) puntos -= 15;
+  return Math.max(0, Math.min(100, puntos));
 };
 
 const MetricCard = ({ title, value, unit, icon: Icon, colorClass }) => {
@@ -154,48 +163,64 @@ const MetricCard = ({ title, value, unit, icon: Icon, colorClass }) => {
   );
 };
 
-const Dashboard = () => {
-  const [datos, setDatos] = useState({ temp: 24, hum_aire: 60, hum_tierra: 71, luz: 78 });
+const Dashboard = ({ onLogout }) => {
+  const [plantas, setPlantas] = useState([]);
+  const [plantaId, setPlantaId] = useState(null);
+  const [alertas, setAlertas] = useState([]);
+  const [conectado, setConectado] = useState(null); // null = cargando, true/false = último refresco
   const [inputText, setInputText] = useState('');
-  const [mensajes, setMensajes] = useState([{ id: 1, sender: 'ai', text: 'Sistema de telemetría iniciado. Asistente en línea. ¿En qué le puedo asistir con este cultivo?' }]);
+  const [enviando, setEnviando] = useState(false);
+  const [mensajes, setMensajes] = useState([{ id: 1, sender: 'ai', text: 'Asistente en línea. Consulte sobre el estado, el riego o las alertas de este cultivo.' }]);
   const chatEndRef = useRef(null);
 
   useEffect(() => {
-    const intervalo = setInterval(() => {
-      setDatos(prev => ({
-        ...prev,
-        hum_tierra: prev.hum_tierra > 15 ? prev.hum_tierra - 0.5 : 15, 
-        temp: prev.temp + (Math.random() * 0.4 - 0.2)
-      }));
-    }, 3000);
-    return () => clearInterval(intervalo);
+    let vivo = true;
+    const refrescar = async () => {
+      try {
+        const [p, a] = await Promise.all([getPlantas(), getAlertas()]);
+        if (!vivo) return;
+        setPlantas(p);
+        setAlertas(a);
+        setPlantaId((actual) => actual ?? p[0]?.entity_id ?? null);
+        setConectado(true);
+      } catch {
+        if (vivo) setConectado(false);
+      }
+    };
+    refrescar();
+    const intervalo = setInterval(refrescar, REFRESCO_MS);
+    return () => { vivo = false; clearInterval(intervalo); };
   }, []);
 
   useEffect(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), [mensajes]);
 
-  const saludGlobal = useMemo(() => calcularSalud(datos.temp, datos.hum_tierra, datos.luz), [datos]);
+  const planta = plantas.find((p) => p.entity_id === plantaId);
+  const datos = {
+    temp: num(planta?.temperature),
+    hum_aire: num(planta?.humidity),
+    hum_tierra: num(planta?.soil_moisture),
+    luz: num(planta?.luminosity),
+  };
+  const sinDatos = !planta;
+  const saludGlobal = calcularSalud(datos.temp, datos.hum_tierra, datos.luz);
+  const alertasPlanta = alertas.filter((a) => !plantaId || a.entity_id === plantaId);
 
-  const enviarMensajeIA = () => {
-    if (!inputText.trim()) return;
-    const nuevoMensajeUsuario = { id: Date.now(), sender: 'user', text: inputText };
-    setMensajes(prev => [...prev, nuevoMensajeUsuario]);
-    const query = inputText.toLowerCase();
+  const enviarMensajeIA = async () => {
+    const pregunta = inputText.trim();
+    if (!pregunta || enviando) return;
+    setMensajes((prev) => [...prev, { id: Date.now(), sender: 'user', text: pregunta }]);
     setInputText('');
-
-    setTimeout(() => {
-      let respuestaIA = "Procesando telemetría... Consulte sobre variables de riego, temperatura o viabilidad general.";
-      if (query.includes('agua') || query.includes('humedad') || query.includes('riego') || query.includes('regar')) {
-        respuestaIA = datos.hum_tierra < 40 
-          ? `ALERTA: Nivel de humedad en sustrato al ${datos.hum_tierra.toFixed(0)}%. Se requiere activación inmediata de electroválvulas.`
-          : `Sustrato en rango óptimo (${datos.hum_tierra.toFixed(0)}%). No se requiere irrigación adicional.`;
-      } else if (query.includes('calor') || query.includes('temperatura') || query.includes('clima')) {
-        respuestaIA = `Lectura térmica actual: ${datos.temp.toFixed(1)}°C. Las condiciones atmosféricas se encuentran dentro de los márgenes de seguridad.`;
-      } else if (query.includes('salud') || query.includes('estado') || query.includes('como esta')) {
-        respuestaIA = `Índice de viabilidad del cultivo: ${Math.round(saludGlobal)}%. ` + 
-                      (saludGlobal > 80 ? 'No se detectan anomalías fisiológicas.' : 'Se detecta un patrón de estrés hídrico potencial.');
-      }
-      setMensajes(prev => [...prev, { id: Date.now() + 1, sender: 'ai', text: respuestaIA }]);
-    }, 1000);
+    setEnviando(true);
+    let texto;
+    try {
+      texto = await chat(pregunta, plantaId);
+    } catch (err) {
+      texto = err.response?.status === 503
+        ? 'La IA no está configurada en el servidor (falta GEMINI_API_KEY).'
+        : 'No se pudo obtener respuesta de la IA. Intente de nuevo.';
+    }
+    setMensajes((prev) => [...prev, { id: Date.now() + 1, sender: 'ai', text: texto }]);
+    setEnviando(false);
   };
 
   const escalaPlanta = saludGlobal / 100 * 0.1 + 0.9; 
@@ -214,17 +239,29 @@ const Dashboard = () => {
               </div>
               <div>
                 <h2 className="text-3xl md:text-4xl font-extrabold text-gray-800 tracking-tight">Monitor Activo: Tomate</h2>
-                <p className="text-emerald-600 font-semibold mt-2 flex items-center gap-2">
-                  <Activity size={18} className="animate-pulse"/> Transmisión en línea • Viabilidad: {Math.round(saludGlobal)}%
+                <p className={`font-semibold mt-2 flex items-center gap-2 ${conectado === false ? 'text-red-600' : 'text-emerald-600'}`}>
+                  <Activity size={18} className={conectado ? 'animate-pulse' : ''}/>
+                  {conectado === false ? 'Sin conexión con el servidor'
+                    : sinDatos ? 'Esperando lecturas del sensor...'
+                    : <>Última lectura: {new Date(planta.ts).toLocaleString()} • Viabilidad: {Math.round(saludGlobal)}%</>}
                 </p>
               </div>
             </div>
-            <div className="hidden sm:block">
-              <span className="bg-white border border-gray-200 text-gray-700 px-5 py-2.5 rounded-full font-bold text-sm shadow-sm flex items-center gap-2">
-                <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-ping absolute"></span>
-                <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full relative"></span>
-                Conexión FIWARE
+            <div className="flex items-center gap-3">
+              {plantas.length > 1 && (
+                <select value={plantaId ?? ''} onChange={(e) => setPlantaId(e.target.value)}
+                  className="bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-full font-bold text-sm shadow-sm">
+                  {plantas.map((p) => <option key={p.entity_id} value={p.entity_id}>{p.entity_id}</option>)}
+                </select>
+              )}
+              <span className="hidden sm:flex bg-white border border-gray-200 text-gray-700 px-5 py-2.5 rounded-full font-bold text-sm shadow-sm items-center gap-2">
+                <span className={`w-2.5 h-2.5 rounded-full ${conectado === false ? 'bg-red-500' : conectado ? 'bg-emerald-500' : 'bg-gray-400'}`}></span>
+                {plantaId ?? 'FIWARE'}
               </span>
+              <button onClick={onLogout} title="Cerrar sesión"
+                className="bg-white border border-gray-200 text-gray-600 p-2.5 rounded-full shadow-sm hover:bg-gray-50">
+                <LogOut size={18} />
+              </button>
             </div>
           </header>
 
@@ -248,10 +285,29 @@ const Dashboard = () => {
 
             <div className="xl:col-span-8 flex flex-col gap-8 h-full min-h-0">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 shrink-0">
-                <MetricCard title="Humedad Suelo" value={datos.hum_tierra.toFixed(0)} unit="%" icon={Sprout} colorClass={datos.hum_tierra > 40 ? "bg-emerald-500" : "bg-red-500"} />
-                <MetricCard title="Temp. Aire" value={datos.temp.toFixed(1)} unit="°C" icon={Thermometer} colorClass={datos.temp > 15 && datos.temp < 30 ? "bg-amber-500" : "bg-red-500"} />
-                <MetricCard title="Radiación Luz" value={datos.luz.toFixed(0)} unit="%" icon={Sun} colorClass="bg-blue-500" />
-                <MetricCard title="Humedad Aire" value={datos.hum_aire.toFixed(0)} unit="%" icon={Droplets} colorClass="bg-cyan-500" />
+                <MetricCard title="Humedad Suelo" value={fmt(datos.hum_tierra)} unit="%" icon={Sprout} colorClass={datos.hum_tierra == null ? "bg-gray-400" : datos.hum_tierra > 40 ? "bg-emerald-500" : "bg-red-500"} />
+                <MetricCard title="Temp. Aire" value={fmt(datos.temp, 1)} unit="°C" icon={Thermometer} colorClass={datos.temp == null ? "bg-gray-400" : datos.temp > 15 && datos.temp < 30 ? "bg-amber-500" : "bg-red-500"} />
+                <MetricCard title="Luminosidad" value={fmt(datos.luz)} unit="lx" icon={Sun} colorClass={datos.luz == null ? "bg-gray-400" : datos.luz < LUX_MIN ? "bg-red-500" : "bg-blue-500"} />
+                <MetricCard title="Humedad Aire" value={fmt(datos.hum_aire)} unit="%" icon={Droplets} colorClass={datos.hum_aire == null ? "bg-gray-400" : "bg-cyan-500"} />
+              </div>
+
+              <div className="bg-white border border-gray-200 rounded-[2rem] shadow-[0_4px_20px_rgb(0,0,0,0.02)] shrink-0 overflow-hidden">
+                <div className="bg-gray-50 px-6 py-3 border-b border-gray-100 flex items-center gap-2 text-sm font-bold text-gray-800">
+                  <AlertTriangle size={18} className="text-amber-500" /> Alertas recientes
+                  <span className="ml-auto text-xs font-semibold text-gray-400">{alertasPlanta.length}</span>
+                </div>
+                <ul className="max-h-36 overflow-y-auto divide-y divide-gray-50">
+                  {alertasPlanta.length === 0 && <li className="px-6 py-3 text-sm text-gray-400">Sin alertas</li>}
+                  {alertasPlanta.map((a) => (
+                    <li key={a.id} className="px-6 py-2.5 text-sm flex items-start gap-3">
+                      {a.severidad === 'error'
+                        ? <AlertOctagon size={16} className="text-red-500 mt-0.5 shrink-0" />
+                        : <AlertTriangle size={16} className="text-amber-500 mt-0.5 shrink-0" />}
+                      <span className="text-gray-700 flex-1">{a.mensaje}</span>
+                      <span className="text-xs text-gray-400 shrink-0">{new Date(a.ts).toLocaleString()}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
 
               <div className="flex-1 bg-white border border-gray-200 rounded-[2rem] shadow-[0_4px_20px_rgb(0,0,0,0.02)] flex flex-col min-h-[400px] overflow-hidden">
@@ -259,7 +315,7 @@ const Dashboard = () => {
                   <div className="flex items-center gap-3">
                     <div className="bg-emerald-100 text-emerald-700 p-2.5 rounded-xl"><Bot size={22}/></div>
                     <div>
-                      <h4 className="font-bold text-gray-800 text-sm">Analista IA (Módulo Local)</h4>
+                      <h4 className="font-bold text-gray-800 text-sm">Analista IA (Gemini)</h4>
                       <p className="text-xs text-emerald-600 font-semibold">En línea</p>
                     </div>
                   </div>
@@ -273,6 +329,13 @@ const Dashboard = () => {
                       </div>
                     </div>
                   ))}
+                  {enviando && (
+                    <div className="flex justify-start">
+                      <div className="px-5 py-3 rounded-2xl bg-[#f4f7f5] text-gray-500 text-sm border border-gray-100 flex items-center gap-2">
+                        <Loader2 className="animate-spin" size={16} /> Analizando...
+                      </div>
+                    </div>
+                  )}
                   <div ref={chatEndRef} />
                 </div>
 
@@ -288,6 +351,7 @@ const Dashboard = () => {
                     />
                     <button 
                       onClick={enviarMensajeIA}
+                      disabled={enviando}
                       className="bg-emerald-600 text-white p-3 rounded-xl hover:bg-emerald-700 transition-colors flex items-center justify-center shadow-md shadow-emerald-600/30"
                     >
                       <Send size={18} />
@@ -309,10 +373,14 @@ const Dashboard = () => {
 // 3. ENRUTADOR PRINCIPAL
 // ==========================================
 export default function App() {
-  const [autenticado, setAutenticado] = useState(false);
+  const [autenticado, setAutenticado] = useState(() => !!getToken());
+  const salir = () => { clearToken(); setAutenticado(false); };
+
+  // Token vencido o inválido: la API responde 401 y se vuelve al login
+  useEffect(() => { onUnauthorized(salir); }, []);
 
   return autenticado ? (
-    <Dashboard />
+    <Dashboard onLogout={salir} />
   ) : (
     <LoginScreen onLogin={() => setAutenticado(true)} />
   );

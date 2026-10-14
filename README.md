@@ -8,7 +8,7 @@ app/
   etl/        ETL Python (CrateDB -> limpiar -> analizar -> Postgres + alertas a Orion)
   dwh/        Esquema Postgres (init.sql)
   api_ai/     API FastAPI + chat con IA
-  frontend/   nginx + HTML/JS
+  frontend/   React + Vite + Tailwind (build multi-etapa -> nginx)
 infra/        Infraestructura AWS (Security Group, scripts)
 doc/          Documentación y comandos de ejemplo
 ```

@@ -37,7 +37,7 @@ Basada en el diagrama de la pizarra del profesor ("Agricultura"). Los otros proy
 | Limpiar / Analizar | `etl` | Python | Limpia rangos, calcula agregados y alertas |
 | PostgreSQL | `dwh` | Postgres 16 | Datos limpios, resúmenes, alertas |
 | API + IA | `api` | FastAPI + **Gemini** (`GEMINI_API_KEY`) | REST protegida con login (token firmado) + `/api/chat` |
-| Front + Auth (80/443) | `frontend` | nginx + HTML/JS | Login sencillo (`FRONT_USER`/`FRONT_PASSWORD`), estado, alertas, chat |
+| Front + Auth (80/443) | `frontend` | React + Vite + Tailwind servido por nginx | Login sencillo (`FRONT_USER`/`FRONT_PASSWORD`), estado, alertas, chat |
 | (lazo inferior) | ETL → Orion | HTTP | La alerta se publica como entidad `PlantAlert` |
 
 **Decisiones**
