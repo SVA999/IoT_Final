@@ -76,7 +76,7 @@ Todo esto está automatizado en `doc/provisionar.sh <IP>`.
 
 ## 6. Pendientes / por confirmar
 
-1. **Contrato con el end device:** debe publicar JSON al agente (`POST :7896/iot/json?k=plantas2026&i=planta01`) con las claves `t`, `h`, `l`, `s`, `loc`. Confirmar con el otro equipo.
+1. **Contrato con el end device** (firmware en `firmware/IoT_Orion`): `POST :7896/iot/json?k=plantas2026&i=planta01` con las claves `temperatura_aire`, `humedad_aire`, `luz_lux`, `humedad_suelo_pct` (sin GPS). `doc/provisionar.sh` las mapea a `temperature`, `humidity`, `luminosity`, `soilMoisture`. Si el firmware cambia una clave, hay que cambiarla también ahí.
 2. **Transporte:** si el device usa LoRa, hace falta un gateway LoRa→HTTP hacia el agente; si usa WiFi, publica directo.
 3. **Puerto "5555"** que aparece junto al Agente en la pizarra: confirmar con el profesor (aquí se usó 7896, el HTTP sur estándar del agente JSON).
 5. **HTTPS (443):** certificado (Let's Encrypt / ALB) para el front.

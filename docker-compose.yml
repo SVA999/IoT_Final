@@ -17,10 +17,7 @@ services:
       - IOTA_CB_PORT=1026
       - IOTA_NORTH_PORT=4041
       - IOTA_REGISTRY_TYPE=mongodb
-      - IOTA_MONGO_HOST=mongo-db
-      - IOTA_MONGO_PORT=27017
-      - IOTA_MONGO_URL=mongodb://mongo-db:27017
-      - IOTA_MONGO_DB=iotagentjson
+      - IOTA_MONGO_URI=mongodb://mongo-db:27017/iotagentjson   # nombre exacto: URI (las versiones nuevas ya no leen HOST/PORT/DB)
       - IOTA_HTTP_PORT=7896
       - IOTA_PROVIDER_URL=http://iot-agent:4041
       
