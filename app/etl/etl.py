@@ -9,7 +9,7 @@ CRATE_URL = os.environ["CRATE_URL"]
 TABLE = os.environ["CRATE_TABLE"]
 DSN = os.environ["DWH_DSN"]
 ORION = os.environ["ORION_URL"]
-CRATE_AUTH = (os.environ.get("CRATE_USER", "crate"), os.environ.get("CRATE_PASSWORD", ""))
+CRATE_AUTH = (os.environ.get("CRATE_USER", "iot"), os.environ.get("CRATE_PASSWORD", ""))
 INTERVAL = int(os.environ.get("ETL_INTERVAL_SECONDS", "300"))
 
 # Rangos fisicos validos (limpiar) y umbrales de advertencia (analizar). Ajustar al cultivo.

@@ -53,7 +53,7 @@ services:
     expose: ["8668"]
     environment:
       - CRATE_HOST=crate-db
-      - CRATE_DB_USER=crate
+      - CRATE_DB_USER=iot
       - CRATE_DB_PASS=${CRATE_PASSWORD:?define CRATE_PASSWORD en .env}
       - LOGLEVEL=INFO
 
@@ -64,8 +64,8 @@ services:
     ports:
       - "4200:4200"                 # Admin UI / HTTP
     expose: ["4300", "5432"]        # 5432 de Crate NO se publica (choca con el DWH)
-    # Auth: el usuario 'crate' entra sin clave solo desde dentro del contenedor (_local_, usado por doc/crate_auth.sh);
-    # el resto (UI, QuantumLeap, ETL, Grafana) debe usar usuario+clave.
+    # Auth: el superusuario integrado 'crate' no admite clave; solo entra sin ella desde dentro del contenedor (_local_,
+    # lo usa doc/crate_auth.sh para crear el usuario 'iot'). El resto (UI, QuantumLeap, ETL, Grafana) usa iot + CRATE_PASSWORD.
     command: >
       crate -Cauth.host_based.enabled=true
       -Cauth.host_based.config.0.user=crate -Cauth.host_based.config.0.address=_local_ -Cauth.host_based.config.0.method=trust
@@ -97,7 +97,7 @@ services:
     depends_on: [crate-db, dwh, orion]
     environment:
       - CRATE_URL=http://crate-db:4200/_sql
-      - CRATE_USER=crate
+      - CRATE_USER=iot
       - CRATE_PASSWORD=${CRATE_PASSWORD:?define CRATE_PASSWORD en .env}
       - DWH_DSN=postgresql://${DWH_USER:-dwh}:${DWH_PASSWORD}@dwh:5432/${DWH_DB:-plantas}
       - ORION_URL=http://orion:1026

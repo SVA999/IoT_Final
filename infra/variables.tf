@@ -67,7 +67,7 @@ variable "disk_gb" {
 }
 
 variable "crate_password" {
-  description = "Password del usuario 'crate' de CrateDB (UI :4200, QuantumLeap, ETL, Grafana)"
+  description = "Password del usuario 'iot' de CrateDB (UI :4200, QuantumLeap, ETL, Grafana)"
   type        = string
   sensitive   = true
 }
