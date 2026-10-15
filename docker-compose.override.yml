@@ -1,0 +1,7 @@
+services:
+  grafana:
+    environment:
+      - DWH_PASSWORD=${DWH_PASSWORD}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro

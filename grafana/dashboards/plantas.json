@@ -1,0 +1,338 @@
+{
+ "uid": "plantas-iot",
+ "title": "Monitor de plantas",
+ "schemaVersion": 39,
+ "refresh": "1m",
+ "time": {
+  "from": "now-24h",
+  "to": "now"
+ },
+ "panels": [
+  {
+   "id": 1,
+   "type": "stat",
+   "title": "Humedad suelo",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "dwh"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 6,
+    "h": 4
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "dwh"
+     },
+     "format": "time_series",
+     "editorMode": "code",
+     "rawQuery": true,
+     "rawSql": "SELECT ts AS time, soil_moisture AS value FROM lectura_limpia WHERE $__timeFilter(ts) AND entity_id IN ($planta) ORDER BY ts"
+    }
+   ]
+  },
+  {
+   "id": 5,
+   "type": "timeseries",
+   "title": "Humedad suelo",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "dwh"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 4,
+    "w": 12,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "dwh"
+     },
+     "format": "time_series",
+     "editorMode": "code",
+     "rawQuery": true,
+     "rawSql": "SELECT ts AS time, entity_id AS metric, soil_moisture AS value FROM lectura_limpia WHERE $__timeFilter(ts) AND entity_id IN ($planta) ORDER BY ts"
+    }
+   ]
+  },
+  {
+   "id": 2,
+   "type": "stat",
+   "title": "Temperatura aire",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "dwh"
+   },
+   "gridPos": {
+    "x": 6,
+    "y": 0,
+    "w": 6,
+    "h": 4
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "celsius"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "dwh"
+     },
+     "format": "time_series",
+     "editorMode": "code",
+     "rawQuery": true,
+     "rawSql": "SELECT ts AS time, temperature AS value FROM lectura_limpia WHERE $__timeFilter(ts) AND entity_id IN ($planta) ORDER BY ts"
+    }
+   ]
+  },
+  {
+   "id": 6,
+   "type": "timeseries",
+   "title": "Temperatura aire",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "dwh"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 4,
+    "w": 12,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "celsius"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "dwh"
+     },
+     "format": "time_series",
+     "editorMode": "code",
+     "rawQuery": true,
+     "rawSql": "SELECT ts AS time, entity_id AS metric, temperature AS value FROM lectura_limpia WHERE $__timeFilter(ts) AND entity_id IN ($planta) ORDER BY ts"
+    }
+   ]
+  },
+  {
+   "id": 3,
+   "type": "stat",
+   "title": "Luminosidad",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "dwh"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 0,
+    "w": 6,
+    "h": 4
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "lux"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "dwh"
+     },
+     "format": "time_series",
+     "editorMode": "code",
+     "rawQuery": true,
+     "rawSql": "SELECT ts AS time, luminosity AS value FROM lectura_limpia WHERE $__timeFilter(ts) AND entity_id IN ($planta) ORDER BY ts"
+    }
+   ]
+  },
+  {
+   "id": 7,
+   "type": "timeseries",
+   "title": "Luminosidad",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "dwh"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 12,
+    "w": 12,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "lux"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "dwh"
+     },
+     "format": "time_series",
+     "editorMode": "code",
+     "rawQuery": true,
+     "rawSql": "SELECT ts AS time, entity_id AS metric, luminosity AS value FROM lectura_limpia WHERE $__timeFilter(ts) AND entity_id IN ($planta) ORDER BY ts"
+    }
+   ]
+  },
+  {
+   "id": 4,
+   "type": "stat",
+   "title": "Humedad aire",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "dwh"
+   },
+   "gridPos": {
+    "x": 18,
+    "y": 0,
+    "w": 6,
+    "h": 4
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "dwh"
+     },
+     "format": "time_series",
+     "editorMode": "code",
+     "rawQuery": true,
+     "rawSql": "SELECT ts AS time, humidity AS value FROM lectura_limpia WHERE $__timeFilter(ts) AND entity_id IN ($planta) ORDER BY ts"
+    }
+   ]
+  },
+  {
+   "id": 8,
+   "type": "timeseries",
+   "title": "Humedad aire",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "dwh"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 12,
+    "w": 12,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "dwh"
+     },
+     "format": "time_series",
+     "editorMode": "code",
+     "rawQuery": true,
+     "rawSql": "SELECT ts AS time, entity_id AS metric, humidity AS value FROM lectura_limpia WHERE $__timeFilter(ts) AND entity_id IN ($planta) ORDER BY ts"
+    }
+   ]
+  },
+  {
+   "id": 9,
+   "type": "table",
+   "title": "Alertas recientes",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "dwh"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 20,
+    "w": 24,
+    "h": 8
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "dwh"
+     },
+     "format": "table",
+     "editorMode": "code",
+     "rawQuery": true,
+     "rawSql": "SELECT ts AS \"hora\", entity_id AS planta, severidad, tipo, mensaje FROM alerta WHERE $__timeFilter(ts) ORDER BY ts DESC LIMIT 100"
+    }
+   ]
+  }
+ ],
+ "templating": {
+  "list": [
+   {
+    "name": "planta",
+    "label": "Planta",
+    "type": "query",
+    "datasource": {
+     "type": "grafana-postgresql-datasource",
+     "uid": "dwh"
+    },
+    "query": "SELECT DISTINCT entity_id FROM lectura_limpia ORDER BY 1",
+    "refresh": 2,
+    "includeAll": true,
+    "multi": true,
+    "current": {
+     "selected": true,
+     "text": "All",
+     "value": "$__all"
+    }
+   }
+  ]
+ }
+}

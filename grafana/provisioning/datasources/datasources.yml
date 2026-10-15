@@ -1,0 +1,15 @@
+apiVersion: 1
+datasources:
+  - name: DWH (Postgres)
+    uid: dwh
+    type: grafana-postgresql-datasource
+    access: proxy
+    url: dwh:5432
+    user: dwh
+    isDefault: true
+    jsonData:
+      database: plantas
+      sslmode: disable
+      postgresVersion: 1600
+    secureJsonData:
+      password: $__env{DWH_PASSWORD}
