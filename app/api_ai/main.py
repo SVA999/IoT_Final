@@ -17,7 +17,7 @@ FRONT_PASSWORD = os.environ["FRONT_PASSWORD"]
 AUTH_SECRET = os.environ["AUTH_SECRET"].encode()
 TOKEN_TTL = 8 * 3600
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 
 app = FastAPI(title="Plantas API")
 
@@ -98,7 +98,12 @@ def ask_gemini(prompt: str) -> str:
     except httpx.HTTPError as e:
         raise HTTPException(status_code=504, detail=f"No se pudo contactar a Gemini: {e.__class__.__name__}")
     if r.status_code != 200:
-        raise HTTPException(status_code=502, detail=f"Gemini respondio {r.status_code}")
+        try:  # mensaje de Google (p. ej. modelo inexistente, clave invalida, cuota): util para diagnosticar
+            motivo = r.json()["error"]["message"]
+        except (KeyError, TypeError, ValueError):
+            motivo = r.text[:200]
+        print(f"Gemini {GEMINI_MODEL} -> {r.status_code}: {motivo}", flush=True)
+        raise HTTPException(status_code=502, detail=f"Gemini ({GEMINI_MODEL}) respondio {r.status_code}: {motivo}"[:300])
     try:
         parts = r.json()["candidates"][0]["content"]["parts"]
         return "".join(p.get("text", "") for p in parts) or "La IA no genero respuesta."

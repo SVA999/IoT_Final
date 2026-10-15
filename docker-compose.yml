@@ -117,7 +117,7 @@ services:
       - FRONT_PASSWORD=${FRONT_PASSWORD:?define FRONT_PASSWORD en .env}
       - AUTH_SECRET=${AUTH_SECRET:?define AUTH_SECRET en .env}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.6-flash}
 
   # ---------- Presentacion ----------
   frontend:

@@ -218,7 +218,7 @@ const Dashboard = ({ onLogout }) => {
       const st = err.response?.status;
       texto = st === 503 ? 'La IA no está configurada o la base de datos no está disponible.'
         : st === 401 ? 'La sesión venció. Inicie sesión de nuevo.'
-        : st === 502 || st === 504 ? 'La IA (Gemini) no respondió correctamente. Intente de nuevo.'
+        : st === 502 || st === 504 ? `La IA (Gemini) falló: ${err.response?.data?.detail ?? 'sin detalle'}`
         : err.code === 'ECONNABORTED' ? 'La IA tardó demasiado en responder. Intente de nuevo.'
         : 'No se pudo obtener respuesta de la IA. Intente de nuevo.';
     }
