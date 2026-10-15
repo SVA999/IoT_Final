@@ -222,7 +222,14 @@ const Dashboard = ({ onLogout }) => {
         : err.code === 'ECONNABORTED' ? 'La IA tardó demasiado en responder. Intente de nuevo.'
         : 'No se pudo obtener respuesta de la IA. Intente de nuevo.';
     }
-    if (typeof texto !== 'string' || !texto) texto = 'La IA no devolvió contenido.';
+    
+    // Limpieza de sintaxis Markdown (negritas y cursivas)
+    if (typeof texto === 'string') {
+      texto = texto.replace(/\*\*/g, '').replace(/\*/g, '');
+    } else if (!texto) {
+      texto = 'La IA no devolvió contenido.';
+    }
+
     setMensajes((prev) => [...prev, { id: Date.now() + 1, sender: 'ai', text: texto }]);
     setEnviando(false);
   };
