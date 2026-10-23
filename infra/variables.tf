@@ -89,8 +89,8 @@ variable "gemini_api_key" {
   default     = ""
 
   validation {
-    condition     = var.gemini_api_key == "" || can(regex("^[A-Za-z0-9_-]+$", var.gemini_api_key))
-    error_message = "gemini_api_key tiene caracteres no validos (copiala completa y sin comillas)."
+    condition     = var.gemini_api_key == "" || can(regex("^[A-Za-z0-9_.-]+$", var.gemini_api_key))
+    error_message = "gemini_api_key tiene caracteres no validos: se permiten letras, numeros, punto, guion y guion bajo (copiala completa y sin comillas ni espacios)."
   }
 }
 
