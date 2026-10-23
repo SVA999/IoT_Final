@@ -8,3 +8,5 @@ crate_password = "cambiame"                # sin comillas simples ni $
 front_user     = "admin"
 front_password = "cambiame"
 gemini_api_key = ""                        # opcional; https://aistudio.google.com/apikey
+telegram_bot_token = ""                    # opcional; ver doc/NOTIFICACIONES.md (BotFather)
+telegram_chat_ids  = ""                    # opcional; ids separados por coma

@@ -13,7 +13,7 @@ Plataforma IoT sobre **FIWARE** para monitorear una planta: un sensor (ESP32) mi
                                                                    ▼
  ┌────────────────────┐   limpia / analiza   ┌──────────┐    ┌─────────────┐
  │ Postgres (DWH)     │ ◄─────────────────── │   ETL    │ ◄─ │ CrateDB     │ ◄─ QuantumLeap
- │ lecturas, resumen, │      cada 5 min      │ (Python) │    │ histórico   │    (:8668)
+ │ lecturas, resumen, │ por evento + 30 min  │ (Python) │    │ histórico   │    (:8668)
  │ alertas            │                      └────┬─────┘    │ crudo       │
  └─────────┬──────────┘                           │          └─────────────┘
            │                                      └─► alertas vuelven a Orion (entidad PlantAlert)
@@ -33,7 +33,11 @@ Plataforma IoT sobre **FIWARE** para monitorear una planta: un sensor (ESP32) mi
 | **orion** + **db-mongo** | Guarda el **estado actual** de la planta (`planta01`, tipo `PlantSensor`) | API REST, sin interfaz web. Puerto externo 1036 |
 | **fiware-quantumleap** | Recibe las notificaciones de Orion y las guarda como serie de tiempo | |
 | **db-crate** (CrateDB 5.8) | Histórico **crudo**, tabla `mtopeniot.etplantsensor` | Con autenticación: usuario `iot` |
-| **etl** (Python) | Cada 5 min lee Crate, **limpia** (rangos físicos) y **analiza** (umbrales) y escribe en Postgres; las alertas también se publican en Orion | `app/etl/etl.py` |
+| **processor** | Recibe la **suscripción de Orion** en cada lectura y dispara el ETL en vivo (dormido si no hay eventos) | `app/etl/worker.py` |
+| **etl** (Python) | **Trabajo de una sola pasada** (no un servicio): lo dispara el evento anterior y un cron de seguridad cada 30 min. Lee Crate, **limpia** (rangos físicos), **analiza** (umbrales, una alerta por condición), escribe en Postgres en una transacción y ejecuta el modelo predictivo. Termina solo (código 0/1) | `app/etl/etl.py` |
+| **Modelo predictivo** (dentro del ETL) | Tendencia lineal (mínimos cuadrados) sobre las lecturas **reales** del sensor; avisa si una variable cruzaría su límite en ≤ 6 h. Sin datos suficientes **no predice** | `app/etl/predict.py`, [doc/MODELO_PREDICTIVO.md](doc/MODELO_PREDICTIVO.md) |
+| **WebSocket** (`/api/ws`) | Lecturas, alertas y predicciones se empujan al navegador al instante (Postgres `LISTEN/NOTIFY`, sin sondeo): aviso emergente, pantalla **Predicciones** con gráficos y estado del modelo |
+| **Telegram** | Alertas y predicciones (*"se va a acabar el agua"*) llegan al chat; con bandeja de salida, reintentos acotados y sin repetir | `app/etl/notify.py`, [doc/NOTIFICACIONES.md](doc/NOTIFICACIONES.md) | `app/api_ai/main.py`, `app/frontend/src/useNotificaciones.js` |
 | **dwh-postgres** (Postgres 16) | Almacén de datos limpios: `lectura_limpia`, `resumen_horario`, `alerta` | Solo escucha en `127.0.0.1` de la EC2 |
 | **api** (FastAPI) | Login con token, `/api/plantas`, `/api/alertas`, `/api/chat` (Gemini) | La IA solo ve datos ya limpios |
 | **frontend** (React + Vite + Tailwind → nginx) | Panel: estado de la planta, alertas, chat con IA | nginx hace proxy de `/api/` a la API (mismo origen, sin CORS) |
@@ -49,7 +53,7 @@ Más detalle y decisiones de diseño: [doc/ARQUITECTURA.md](doc/ARQUITECTURA.md)
 
 ```
 app/
-  etl/        ETL Python (Crate -> limpiar -> analizar -> Postgres + alertas a Orion)
+  etl/        ETL de una pasada (Crate -> limpiar -> analizar -> Postgres + alertas a Orion) y modelo predictivo
   dwh/        Esquema de Postgres (init.sql)
   api_ai/     API FastAPI + chat con Gemini
   frontend/   React + Vite + Tailwind (build multi-etapa -> nginx)

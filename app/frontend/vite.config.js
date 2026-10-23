@@ -8,6 +8,6 @@ export default defineConfig({
   server: {
     // En desarrollo local, /api va a la API (docker compose la expone solo en red interna:
     // para probar en local, publicar el 8000 o ajustar este target)
-    proxy: { '/api': 'http://localhost:8000' },
+    proxy: { '/api': { target: 'http://localhost:8000', ws: true } },
   },
 })

@@ -26,6 +26,8 @@ AUTH_SECRET=$(openssl rand -hex 32)
 CRATE_PASSWORD=${crate_password}
 GEMINI_API_KEY=${gemini_api_key}
 GEMINI_MODEL=gemini-3.6-flash
+TELEGRAM_BOT_TOKEN=${telegram_bot_token}
+TELEGRAM_CHAT_IDS=${telegram_chat_ids}
 ENV
 chmod 600 .env
 
@@ -39,4 +41,15 @@ for i in $(seq 1 60); do
   sleep 5
 done
 bash doc/provisionar.sh localhost
+
+# El camino principal del ETL es por EVENTOS (suscripcion de Orion -> servicio `processor`).
+# Este cron cada 30 min es solo la red de seguridad: recupera lo que se perdio si el procesador estuvo caido.
+#  - flock: nunca se solapan dos ejecuciones;  timeout: una ejecucion colgada se corta a los 4 min.
+cat > /etc/cron.d/plantas-etl <<'CRON'
+*/30 * * * * root cd /opt/IoT_Final && flock -n /var/lock/plantas-etl.lock timeout 240 docker compose run --rm -T etl >> /var/log/plantas-etl.log 2>&1
+CRON
+chmod 644 /etc/cron.d/plantas-etl
+cat > /etc/logrotate.d/plantas-etl <<'LR'
+/var/log/plantas-etl.log { weekly rotate 4 compress missingok notifempty }
+LR
 echo "BOOTSTRAP OK"

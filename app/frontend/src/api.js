@@ -20,6 +20,11 @@ export const login = (usuario, password) =>
 
 export const getPlantas = () => http.get('/plantas').then((r) => r.data);
 export const getAlertas = (limit = 20) => http.get('/alertas', { params: { limit } }).then((r) => r.data);
+export const getPredicciones = (horas = 24) => http.get('/predicciones', { params: { horas, limit: 50 } }).then((r) => r.data);
+export const getModeloEstado = (planta) => http.get('/modelo/estado', { params: { planta } }).then((r) => r.data);
+export const getLecturas = (planta, horas = 8) =>
+  http.get(`/plantas/${encodeURIComponent(planta)}/lecturas`, { params: { horas } }).then((r) => r.data);
+export const getNotificaciones = () => http.get('/notificaciones').then((r) => r.data);
 export const chat = (pregunta, planta) =>
   http.post('/chat', { pregunta, planta }, { timeout: 70000 }).then((r) => String(r.data?.respuesta ?? ''));
 

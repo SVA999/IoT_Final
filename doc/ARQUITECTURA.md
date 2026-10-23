@@ -25,6 +25,20 @@ Basada en el diagrama de la pizarra del profesor ("Agricultura"). Los otros proy
                                                                    [Front nginx :80/443] (+ Grafana :3000)
 ```
 
+## 1b. Todo por suscripciones y eventos (sin sondeo)
+| Tramo | Mecanismo |
+|---|---|
+| Device → Agente → Orion | push HTTP / NGSI |
+| Orion → QuantumLeap → Crate | **suscripción 1** de Orion (histórico crudo) |
+| Orion → ETL → DWH | **suscripción 2** de Orion → servicio `processor` → ETL (en vivo, ~10 s tras cada lectura) |
+| ETL → navegador | `pg_notify('eventos')` → API (`LISTEN`) → **WebSocket** `/api/ws` |
+| ETL → Telegram | bandeja de salida `notificacion` + despachador (alertas y predicciones) |
+| Alerta → Orion | el ETL publica la entidad `PlantAlert` (lazo de retorno de la pizarra) |
+
+Lo único periódico es un **cron de seguridad cada 30 min**: si el procesador estuvo caído y se perdió un evento, el ETL recupera lo pendiente
+(es idempotente). El front ya no sondea: se actualiza por eventos (con un plan B lento solo si el websocket está caído).
+Las dos suscripciones las crea `doc/provisionar.sh`; se verifican con `curl <IP>:1036/v2/subscriptions -H 'fiware-service: openiot' -H 'fiware-servicepath: /'`.
+
 ## 2. Capas y mapeo a la pizarra
 
 | Pizarra | Servicio | Tecnología | Notas |

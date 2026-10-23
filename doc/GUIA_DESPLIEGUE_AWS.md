@@ -224,7 +224,9 @@ Sustituye `IP` por la IP elástica (`terraform output ip_publica`).
 | Orion vivo | `http://IP:1036/version` en el navegador | JSON con versión |
 | Dato en Orion | `curl localhost:1036/v2/entities -H 'fiware-service: openiot' -H 'fiware-servicepath: /'` | entidad **`planta01`** (no `PlantSensor:planta01`) con `temperature` tipo `Number` |
 | QuantumLeap/Crate | `http://IP:4200` (usuario `iot`) → consola SQL: `SELECT * FROM mtopeniot.etplantsensor` | filas (la tabla aparece tras la primera lectura) |
-| ETL | `docker logs etl` | `ETL ok: N lecturas` (cada 5 min; `docker restart etl` fuerza uno) |
+| ETL por evento | `docker logs processor` | `ETL por evento ok: {...}` unos segundos después de cada lectura |
+| Suscripciones | `curl localhost:1036/v2/subscriptions -H 'fiware-service: openiot' -H 'fiware-servicepath: /'` | **2**: QuantumLeap y `processor` (ETL en vivo) |
+| ETL de seguridad | `tail /var/log/plantas-etl.log` (cron cada 30 min); forzar uno: `docker compose run --rm etl` | `ETL ok: ...` |
 | DWH | `docker exec dwh-postgres psql -U dwh -d plantas -c "select * from lectura_limpia"` | filas |
 | API | `curl http://IP/api/plantas` | JSON |
 | Front | `http://IP` | pantalla de login; luego tarjeta de la planta, alertas, chat con Gemini |
@@ -242,7 +244,7 @@ Sustituye `IP` por la IP elástica (`terraform output ip_publica`).
 | `crate-db` se reinicia | Falta `vm.max_map_count` o poca RAM. Aplica el `sysctl` o baja `CRATE_HEAP_SIZE` a `1g`. |
 | `etl` dice "table doesn't exist" | Normal hasta que llega el primer dato. Envía el curl del A9. |
 | `provisionar.sh` da 4xx / `Connection refused` | El agente aún arranca. Espera y repite; revisa `docker logs iot-agent`. |
-| Front carga pero sin datos | Aún no corrió el ETL (`docker restart etl`) o falla la API (`docker logs api`). |
+| Front carga pero sin datos | Aún no corrió el ETL (`docker compose run --rm etl`) o falla la API (`docker logs api`). |
 | No conecto por SSH | Tu IP cambió: actualiza la regla 22 del SG (o `admin_cidr` y `terraform apply`). |
 | `terraform apply`: AMI no encontrada | Pon `ubuntu_version = "24.04"`. |
 | `terraform apply`: key pair no existe | En Academy es `vockey` y la región `us-east-1`. |

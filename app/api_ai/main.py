@@ -1,5 +1,7 @@
 """API: lee el DWH y expone plantas/alertas + chat con Gemini. Login sencillo con token firmado."""
+import asyncio
 import base64
+import contextlib
 import hashlib
 import hmac
 import os
@@ -7,7 +9,7 @@ import time
 
 import httpx
 import psycopg
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from psycopg.rows import dict_row
 from pydantic import BaseModel
 
@@ -19,7 +21,45 @@ TOKEN_TTL = 8 * 3600
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 
-app = FastAPI(title="Plantas API")
+clientes: set[WebSocket] = set()   # navegadores conectados al websocket de notificaciones
+
+
+async def difundir(texto: str):
+    """Envia una notificacion a todos los navegadores conectados; descarta los que ya no responden."""
+    for ws in list(clientes):
+        try:
+            await ws.send_text(texto)
+        except Exception:
+            clientes.discard(ws)
+
+
+async def escuchar_predicciones():
+    """El ETL hace pg_notify('eventos', ...) (lecturas, alertas, predicciones, modelo); aqui se recibe y se empuja por websocket.
+    Es por eventos (sin sondeo). Si se cae la conexion, reintenta con espera creciente (1 s ... 30 s)."""
+    espera = 1
+    while True:
+        try:
+            async with await psycopg.AsyncConnection.connect(DSN, autocommit=True) as conn:
+                await conn.execute("LISTEN eventos")
+                espera = 1
+                async for n in conn.notifies():
+                    await difundir(n.payload)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            print(f"LISTEN eventos: {e.__class__.__name__}: {e}; reintento en {espera}s", flush=True)
+        await asyncio.sleep(espera)
+        espera = min(espera * 2, 30)
+
+
+@contextlib.asynccontextmanager
+async def lifespan(_app):
+    tarea = asyncio.create_task(escuchar_predicciones())
+    yield
+    tarea.cancel()
+
+
+app = FastAPI(title="Plantas API", lifespan=lifespan)
 
 
 # ---------- Autenticacion ----------
@@ -32,14 +72,17 @@ def make_token(user: str) -> str:
     return base64.urlsafe_b64encode(f"{payload}:{_sign(payload)}".encode()).decode()
 
 
-def require_auth(authorization: str = Header(default="")):
+def token_valido(token: str) -> bool:
     try:
-        raw = base64.urlsafe_b64decode(authorization.removeprefix("Bearer ").encode()).decode()
+        raw = base64.urlsafe_b64decode(token.encode()).decode()
         user, exp, sig = raw.rsplit(":", 2)
-        ok = hmac.compare_digest(sig, _sign(f"{user}:{exp}")) and int(exp) > time.time()
+        return hmac.compare_digest(sig, _sign(f"{user}:{exp}")) and int(exp) > time.time()
     except Exception:
-        ok = False
-    if not ok:
+        return False
+
+
+def require_auth(authorization: str = Header(default="")):
+    if not token_valido(authorization.removeprefix("Bearer ")):
         raise HTTPException(status_code=401, detail="No autenticado")
 
 
@@ -77,6 +120,56 @@ def historial(pid: str, horas: int = 24):
 @app.get("/api/alertas", dependencies=[Depends(require_auth)])
 def alertas(limit: int = 50):
     return q("SELECT * FROM alerta ORDER BY ts DESC LIMIT %s", limit)
+
+
+@app.get("/api/predicciones", dependencies=[Depends(require_auth)])
+def predicciones(horas: int = 24, limit: int = 20):
+    """Predicciones recientes del modelo de tendencia (solo las generadas a partir de lecturas reales)."""
+    return q("SELECT * FROM prediccion "
+             "WHERE generado > now() - make_interval(hours => %s) ORDER BY generado DESC LIMIT %s", horas, limit)
+
+
+@app.get("/api/modelo/estado", dependencies=[Depends(require_auth)])
+def modelo_estado(planta: str | None = None):
+    """Estado actual del modelo por planta y variable (incluye POR QUE no predice cuando no lo hace)."""
+    return q("SELECT * FROM modelo_estado WHERE (%s::text IS NULL OR entity_id = %s::text) ORDER BY entity_id, variable",
+             planta, planta)
+
+
+@app.get("/api/plantas/{pid}/lecturas", dependencies=[Depends(require_auth)])
+def lecturas(pid: str, horas: int = 8):
+    """Lecturas reales (ya limpias) para graficar la tendencia."""
+    return q("SELECT ts, temperature, humidity, luminosity, soil_moisture FROM lectura_limpia "
+             "WHERE entity_id = %s AND ts > now() - make_interval(hours => %s) ORDER BY ts LIMIT 3000", pid, horas)
+
+
+@app.get("/api/notificaciones", dependencies=[Depends(require_auth)])
+def notificaciones(limit: int = 20):
+    """Bandeja de salida de avisos externos (Telegram) y su estado."""
+    return q("SELECT id, origen, severidad, titulo, mensaje, creada, enviada, estado, detalle "
+             "FROM notificacion ORDER BY id DESC LIMIT %s", limit)
+
+
+@app.websocket("/api/ws")
+async def ws_notificaciones(ws: WebSocket):
+    """Notificaciones en vivo. El navegador envia el token como PRIMER mensaje (no va en la URL ni en logs)."""
+    await ws.accept()
+    try:
+        if not token_valido(await asyncio.wait_for(ws.receive_text(), timeout=5)):
+            raise ValueError("token invalido")
+    except Exception:
+        await ws.close(code=4401)
+        return
+    clientes.add(ws)
+    try:
+        await ws.send_text('{"type":"ready"}')
+        while True:
+            if await ws.receive_text() == "ping":   # latido del cliente: mantiene viva la conexion tras nginx
+                await ws.send_text("pong")
+    except WebSocketDisconnect:
+        pass
+    finally:
+        clientes.discard(ws)
 
 
 # ---------- IA (Gemini) ----------

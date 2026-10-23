@@ -74,4 +74,17 @@ else
                    "metadata": ["dateCreated","dateModified"]}}'
 fi
 
+# 4) Suscripcion Orion -> procesador (ETL EN VIVO): Orion avisa en cada lectura y el procesador lanza el ETL.
+#    Es el camino por eventos; el cron de 30 min es solo la red de seguridad. Solo si no existe ya.
+if curl -s "http://$HOST:1036/v2/subscriptions" -H 'fiware-service: openiot' -H 'fiware-servicepath: /' | grep -q 'ETL en vivo'; then
+  echo "OK   suscripcion Orion->procesador (ya existia)"
+else
+  post "suscripcion Orion->procesador (ETL en vivo)" "http://$HOST:1036/v2/subscriptions" '{
+  "description": "ETL en vivo: cada lectura dispara el procesador",
+  "subject": {"entities": [{"idPattern": ".*", "type": "PlantSensor"}],
+              "condition": {"attrs": ["temperature","humidity","luminosity","soilMoisture"]}},
+  "notification": {"http": {"url": "http://processor:8100/orion/notify"}, "attrs": ["temperature"]},
+  "throttling": 0}'
+fi
+
 exit $FALLO

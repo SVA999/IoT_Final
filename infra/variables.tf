@@ -50,6 +50,19 @@ variable "gemini_api_key" {
   default     = ""
 }
 
+variable "telegram_bot_token" {
+  description = "Token del bot de Telegram (@BotFather) para avisos de alertas/predicciones. Vacio = sin avisos externos. Ver doc/NOTIFICACIONES.md"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "telegram_chat_ids" {
+  description = "IDs de chat de Telegram que reciben los avisos, separados por coma"
+  type        = string
+  default     = ""
+}
+
 variable "ubuntu_version" {
   description = "Version de Ubuntu para la AMI. Si 26.04 no tiene AMI en tu region, usar 24.04"
   type        = string

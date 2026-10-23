@@ -66,12 +66,14 @@ resource "aws_instance" "plantas" {
   }
 
   user_data = replace(templatefile("${path.module}/user_data.sh.tftpl", {
-    repo_url       = var.repo_url
-    dwh_password   = var.dwh_password
-    front_user     = var.front_user
-    front_password = var.front_password
-    gemini_api_key = var.gemini_api_key
-    crate_password = var.crate_password
+    repo_url           = var.repo_url
+    dwh_password       = var.dwh_password
+    front_user         = var.front_user
+    front_password     = var.front_password
+    gemini_api_key     = var.gemini_api_key
+    crate_password     = var.crate_password
+    telegram_bot_token = var.telegram_bot_token
+    telegram_chat_ids  = var.telegram_chat_ids
   }), "\r\n", "\n") # evita CRLF si el .tftpl se edita en Windows (rompe el script en Linux)
   user_data_replace_on_change = true
 

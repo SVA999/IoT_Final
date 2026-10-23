@@ -90,19 +90,39 @@ services:
       - dwh-data:/var/lib/postgresql/data
       - ./app/dwh/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
 
-  etl:
+  # Procesador de eventos: Orion lo avisa (suscripcion) en cada lectura y este dispara el ETL en vivo. Dormido si no hay eventos.
+  processor:
     build: ./app/etl
-    container_name: etl
+    image: plantas-etl
+    container_name: processor
     restart: unless-stopped
+    command: uvicorn worker:app --host 0.0.0.0 --port 8100
     depends_on: [crate-db, dwh, orion]
-    environment:
+    expose: ["8100"]                # solo la red interna: Orion le notifica por http://processor:8100/orion/notify
+    volumes:
+      - ./app/dwh/init.sql:/app/schema.sql:ro
+    environment: &etl-env
       - CRATE_URL=http://crate-db:4200/_sql
       - CRATE_USER=iot
       - CRATE_PASSWORD=${CRATE_PASSWORD:?define CRATE_PASSWORD en .env}
       - DWH_DSN=postgresql://${DWH_USER:-dwh}:${DWH_PASSWORD}@dwh:5432/${DWH_DB:-plantas}
       - ORION_URL=http://orion:1026
-      - ETL_INTERVAL_SECONDS=300
       - CRATE_TABLE=mtopeniot.etplantsensor
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_IDS=${TELEGRAM_CHAT_IDS:-}
+      - TIMEZONE=${TIMEZONE:-America/Bogota}
+
+  # ETL por lotes: red de seguridad. Termina solo; lo lanza cron cada 30 min (infra/user_data.sh.tftpl) o a mano:
+  #   docker compose run --rm etl        (restart "no": si falla, falla visible y no entra en bucle)
+  etl:
+    build: ./app/etl
+    image: plantas-etl
+    container_name: etl
+    restart: "no"
+    depends_on: [crate-db, dwh, orion]
+    volumes:
+      - ./app/dwh/init.sql:/app/schema.sql:ro
+    environment: *etl-env
 
   # ---------- Logica de negocio + IA ----------
   api:

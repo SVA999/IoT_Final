@@ -1,13 +1,15 @@
-import { Component, useState, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { Component, useState, useEffect, useRef, useCallback } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   Thermometer, Droplets, Sun, Sprout, Activity,
   Bot, Send, Leaf, User, Lock, Loader2, ArrowRight,
-  AlertTriangle, AlertOctagon, LogOut
+  AlertTriangle, AlertOctagon, LogOut, TrendingDown, Bell, X
 } from 'lucide-react';
-import { login, setToken, getToken, clearToken, getPlantas, getAlertas, chat, onUnauthorized } from './api';
+import { login, setToken, getToken, clearToken, getPlantas, getAlertas, getPredicciones, chat, onUnauthorized } from './api';
+import { useNotificaciones } from './useNotificaciones';
+import PantallaPredicciones from './Predicciones';
 
-const REFRESCO_MS = 30000;
+const REFRESCO_RESPALDO_MS = 60000; // SOLO si el websocket esta caido; en condiciones normales todo se actualiza por eventos
 const LUX_MIN = 1000; // por debajo se considera poca luz (mismo umbral que el ETL)
 const num = (v) => (v == null ? null : Number(v));
 const fmt = (v, d = 0) => (v == null ? '--' : Number(v).toFixed(d));
@@ -163,34 +165,91 @@ const MetricCard = ({ title, value, unit, icon: Icon, colorClass }) => {
   );
 };
 
+// Aviso emergente de una prediccion recibida por websocket. Se cierra solo a los 20 s.
+const Toast = ({ p, onClose }) => {
+  const cerrar = useRef(onClose);
+  useEffect(() => { cerrar.current = onClose; });
+  useEffect(() => {
+    const t = setTimeout(() => cerrar.current(), 20000);
+    return () => clearTimeout(t);
+  }, [p.id]);
+  const critico = p.severidad === 'critical' || p.severidad === 'error';
+  return (
+    <motion.div initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 40 }}
+      className={`pointer-events-auto w-80 rounded-2xl shadow-xl border p-4 flex gap-3 bg-white ${critico ? 'border-red-300' : 'border-amber-300'}`}>
+      <TrendingDown size={20} className={`${critico ? 'text-red-500' : 'text-amber-500'} shrink-0 mt-0.5`} />
+      <div className="flex-1 text-sm">
+        <p className="font-bold text-gray-800">{p.type === 'alerta' ? `Alerta (${p.severidad})` : `Predicción: ${p.etiqueta}`}</p>
+        <p className="text-gray-600 mt-1">{p.mensaje}</p>
+      </div>
+      <button onClick={onClose} className="text-gray-400 hover:text-gray-600 self-start"><X size={16} /></button>
+    </motion.div>
+  );
+};
+
 const Dashboard = ({ onLogout }) => {
   const [plantas, setPlantas] = useState([]);
   const [plantaId, setPlantaId] = useState(null);
   const [alertas, setAlertas] = useState([]);
+  const [predicciones, setPredicciones] = useState([]);
+  const [avisos, setAvisos] = useState([]); // toasts visibles
+  const [vista, setVista] = useState('monitor'); // 'monitor' | 'predicciones'
+  const [tick, setTick] = useState(0); // sube con cada evento del websocket: las pantallas se recargan sin sondear
   const [conectado, setConectado] = useState(null); // null = cargando, true/false = último refresco
   const [inputText, setInputText] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [mensajes, setMensajes] = useState([{ id: 1, sender: 'ai', text: 'Asistente en línea. Consulte sobre el estado, el riego o las alertas de este cultivo.' }]);
   const chatEndRef = useRef(null);
 
-  useEffect(() => {
-    let vivo = true;
-    const refrescar = async () => {
-      try {
-        const [p, a] = await Promise.all([getPlantas(), getAlertas()]);
-        if (!vivo) return;
-        setPlantas(p);
-        setAlertas(a);
-        setPlantaId((actual) => actual ?? p[0]?.entity_id ?? null);
-        setConectado(true);
-      } catch {
-        if (vivo) setConectado(false);
-      }
-    };
-    refrescar();
-    const intervalo = setInterval(refrescar, REFRESCO_MS);
-    return () => { vivo = false; clearInterval(intervalo); };
+  const refrescar = useCallback(async () => {
+    try {
+      const [p, a, pr] = await Promise.all([getPlantas(), getAlertas(), getPredicciones()]);
+      setPlantas(p);
+      setAlertas(a);
+      setPredicciones(pr);
+      setPlantaId((actual) => actual ?? p[0]?.entity_id ?? null);
+      setConectado(true);
+    } catch {
+      setConectado(false);
+    }
   }, []);
+
+  // Carga inicial. Despues todo llega por EVENTOS (websocket); no hay sondeo periodico.
+  useEffect(() => {
+    // Carga de datos al montar (sincroniza con la API; el setState ocurre despues del await)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    refrescar();
+  }, [refrescar]);
+
+  // Un evento = refrescar datos y avisar a la pantalla activa. Se agrupan las rafagas (varios eventos casi juntos).
+  const temporizador = useRef(null);
+  const alEvento = useCallback(() => {
+    clearTimeout(temporizador.current);
+    temporizador.current = setTimeout(() => { refrescar(); setTick((n) => n + 1); }, 400);
+  }, [refrescar]);
+  useEffect(() => () => clearTimeout(temporizador.current), []);
+
+  // Notificaciones en vivo (websocket): lecturas, alertas, predicciones y estado del modelo
+  const { estado: wsEstado, reintentar } = useNotificaciones({
+    onMensaje: (m) => {
+      if (m.type === 'prediccion') {
+        setPredicciones((prev) => [m, ...prev.filter((x) => x.id !== m.id)].slice(0, 20));
+        setAvisos((prev) => [m, ...prev.filter((x) => x.id !== m.id)].slice(0, 4));
+      } else if (m.type === 'alerta') {
+        setAvisos((prev) => [m, ...prev.filter((x) => x.id !== m.id)].slice(0, 4));
+      }
+      alEvento();
+    },
+    onNoAutorizado: onLogout,
+  });
+
+  // Plan B acotado: solo si el websocket esta caido se sondea despacio, para no quedar ciego
+  useEffect(() => {
+    if (wsEstado !== 'caido') return undefined;
+    const t = setInterval(() => { refrescar(); setTick((n) => n + 1); }, REFRESCO_RESPALDO_MS);
+    return () => clearInterval(t);
+  }, [wsEstado, refrescar]);
+  const cerrarAviso = (id) => setAvisos((prev) => prev.filter((x) => x.id !== id));
 
   useEffect(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), [mensajes]);
 
@@ -204,6 +263,7 @@ const Dashboard = ({ onLogout }) => {
   const sinDatos = !planta;
   const saludGlobal = calcularSalud(datos.temp, datos.hum_tierra, datos.luz);
   const alertasPlanta = alertas.filter((a) => !plantaId || a.entity_id === plantaId);
+  const prediccionesPlanta = predicciones.filter((p) => !plantaId || p.entity_id === plantaId);
 
   const enviarMensajeIA = async () => {
     const pregunta = inputText.trim();
@@ -240,6 +300,11 @@ const Dashboard = ({ onLogout }) => {
 
   return (
     <div className="flex h-screen w-full bg-[#f4f7f5] font-sans overflow-hidden">
+      <div className="fixed top-4 right-4 z-50 flex flex-col gap-3 pointer-events-none">
+        <AnimatePresence>
+          {avisos.map((p) => <Toast key={p.id} p={p} onClose={() => cerrarAviso(p.id)} />)}
+        </AnimatePresence>
+      </div>
       <main className="flex-1 flex flex-col h-full overflow-y-auto">
         <div className="p-6 md:p-8 xl:p-10 flex-1 flex flex-col h-full max-w-[1600px] mx-auto w-full">
           
@@ -269,12 +334,32 @@ const Dashboard = ({ onLogout }) => {
                 <span className={`w-2.5 h-2.5 rounded-full ${conectado === false ? 'bg-red-500' : conectado ? 'bg-emerald-500' : 'bg-gray-400'}`}></span>
                 {plantaId ?? 'FIWARE'}
               </span>
+              <button onClick={wsEstado === 'caido' ? reintentar : undefined}
+                title={wsEstado === 'activo' ? 'Notificaciones en vivo activas'
+                  : wsEstado === 'caido' ? 'Notificaciones desconectadas: clic para reintentar' : 'Conectando notificaciones...'}
+                className={`bg-white border p-2.5 rounded-full shadow-sm ${wsEstado === 'caido' ? 'border-red-300 text-red-500 cursor-pointer' : 'border-gray-200 text-gray-600 cursor-default'}`}>
+                <Bell size={18} className={wsEstado === 'activo' ? 'text-emerald-600' : ''} />
+              </button>
               <button onClick={onLogout} title="Cerrar sesión"
                 className="bg-white border border-gray-200 text-gray-600 p-2.5 rounded-full shadow-sm hover:bg-gray-50">
                 <LogOut size={18} />
               </button>
             </div>
           </header>
+
+          <nav className="mb-6 flex gap-2 shrink-0">
+            {[['monitor', 'Monitor'], ['predicciones', 'Predicciones']].map(([id, txt]) => (
+              <button key={id} onClick={() => setVista(id)}
+                className={`px-5 py-2 rounded-full text-sm font-bold border transition-colors ${vista === id ? 'bg-emerald-600 text-white border-emerald-600 shadow' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                {txt}
+                {id === 'predicciones' && predicciones.length > 0 && (
+                  <span className="ml-2 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{predicciones.length}</span>
+                )}
+              </button>
+            ))}
+          </nav>
+
+          {vista === 'predicciones' ? <PantallaPredicciones plantaId={plantaId} tick={tick} /> : (
 
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 flex-1 min-h-0">
             
@@ -300,6 +385,23 @@ const Dashboard = ({ onLogout }) => {
                 <MetricCard title="Temp. Aire" value={fmt(datos.temp, 1)} unit="°C" icon={Thermometer} colorClass={datos.temp == null ? "bg-gray-400" : datos.temp > 15 && datos.temp < 30 ? "bg-amber-500" : "bg-red-500"} />
                 <MetricCard title="Luminosidad" value={fmt(datos.luz)} unit="lx" icon={Sun} colorClass={datos.luz == null ? "bg-gray-400" : datos.luz < LUX_MIN ? "bg-red-500" : "bg-blue-500"} />
                 <MetricCard title="Humedad Aire" value={fmt(datos.hum_aire)} unit="%" icon={Droplets} colorClass={datos.hum_aire == null ? "bg-gray-400" : "bg-cyan-500"} />
+              </div>
+
+              <div className="bg-white border border-gray-200 rounded-[2rem] shadow-[0_4px_20px_rgb(0,0,0,0.02)] shrink-0 overflow-hidden">
+                <div className="bg-gray-50 px-6 py-3 border-b border-gray-100 flex items-center gap-2 text-sm font-bold text-gray-800">
+                  <TrendingDown size={18} className="text-emerald-600" /> Predicciones (tendencia de lecturas reales)
+                  <span className="ml-auto text-xs font-semibold text-gray-400">{prediccionesPlanta.length}</span>
+                </div>
+                <ul className="max-h-32 overflow-y-auto divide-y divide-gray-50">
+                  {prediccionesPlanta.length === 0 && <li className="px-6 py-3 text-sm text-gray-400">Sin predicciones: ninguna variable se proyecta fuera de rango</li>}
+                  {prediccionesPlanta.map((p) => (
+                    <li key={p.id} className="px-6 py-2.5 text-sm flex items-start gap-3">
+                      <TrendingDown size={16} className={`${p.severidad === 'critical' ? 'text-red-500' : 'text-amber-500'} mt-0.5 shrink-0`} />
+                      <span className="text-gray-700 flex-1">{p.mensaje}</span>
+                      <span className="text-xs text-gray-400 shrink-0">{new Date(p.generado).toLocaleString()}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
 
               <div className="bg-white border border-gray-200 rounded-[2rem] shadow-[0_4px_20px_rgb(0,0,0,0.02)] shrink-0 overflow-hidden">
@@ -373,6 +475,7 @@ const Dashboard = ({ onLogout }) => {
 
             </div>
           </div>
+          )}
         </div>
       </main>
     </div>
