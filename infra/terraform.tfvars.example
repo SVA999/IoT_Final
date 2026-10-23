@@ -1,12 +1,31 @@
-# Copiar a terraform.tfvars (ignorado por git) y completar
-region         = "us-east-1"
-key_name       = "vockey"                  # llave de AWS Academy
-admin_cidr     = "0.0.0.0/0"               # quien puede entrar a SSH, Crate (4200) y Grafana (3000). Mejor "TU_IP/32"
-repo_url       = "https://github.com/USUARIO/IoT_Final.git"
-dwh_password   = "cambiame"
-crate_password = "cambiame"                # sin comillas simples ni $
+# Copia este archivo a terraform.tfvars (git lo ignora) y completa. TODO el despliegue sale de aqui:
+# con `terraform apply` queda corriendo el sistema completo, con estos secretos ya cargados en la instancia.
+
+# ---- AWS Academy ----
+region     = "us-east-1"
+key_name   = "vockey"                 # llave del Lab
+admin_cidr = "190.0.0.1/32"           # TU IP publica (https://checkip.amazonaws.com): SSH, Crate (4200) y Grafana (3000)
+
+# ---- Codigo a desplegar ----
+repo_url = "https://github.com/USUARIO/IoT_Final.git"
+# repo_ref = ""                       # vacio = el ultimo commit de la rama main (cada push se despliega con un apply)
+
+# ---- Claves (min. 8 caracteres; sin comillas, $, \ ni espacios) ----
+dwh_password   = "CAMBIAR_clave_postgres"
+crate_password = "CAMBIAR_clave_crate"
 front_user     = "admin"
-front_password = "cambiame"
-gemini_api_key = ""                        # opcional; https://aistudio.google.com/apikey
-telegram_bot_token = ""                    # opcional; ver doc/NOTIFICACIONES.md (BotFather)
-telegram_chat_ids  = ""                    # opcional; ids separados por coma
+front_password = "CAMBIAR_clave_del_front"
+# auth_secret  = ""                   # opcional: openssl rand -hex 32 (vacio = se genera uno)
+
+# ---- IA (Gemini) ----
+gemini_api_key = ""                   # https://aistudio.google.com/apikey  (vacio = chat deshabilitado)
+# gemini_model = "gemini-3.6-flash"
+
+# ---- Notificaciones por Telegram (ver doc/NOTIFICACIONES.md) ----
+telegram_bot_token = ""               # el que entrega @BotFather: 123456789:AAH...
+telegram_chat_ids  = ""               # ids separados por coma y sin espacios: 7723097733,-100123456
+# timezone         = "America/Bogota"
+
+# ---- Discos ----
+# disk_gb      = 12                   # sistema operativo (efimero)
+# data_disk_gb = 24                   # DATOS (bases + imagenes Docker): disco aparte que sobrevive a recrear la instancia

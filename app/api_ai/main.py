@@ -100,6 +100,17 @@ def login(b: Login):
     return {"token": make_token(b.usuario)}
 
 
+@app.get("/api/salud")
+def salud():
+    """Sin login. Sirve para comprobar que el sistema corre y QUE VERSION: version = commit desplegado por Terraform."""
+    try:
+        q("SELECT 1")
+        db = True
+    except psycopg.Error:
+        db = False
+    return {"ok": db, "version": os.environ.get("DEPLOY_ID", "") or "local"}
+
+
 # ---------- Datos ----------
 def q(sql, *args):
     with psycopg.connect(DSN, row_factory=dict_row) as c:

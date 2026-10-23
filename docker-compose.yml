@@ -138,6 +138,7 @@ services:
       - AUTH_SECRET=${AUTH_SECRET:?define AUTH_SECRET en .env}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.6-flash}
+      - DEPLOY_ID=${DEPLOY_ID:-}          # commit desplegado (lo pone Terraform); se ve en GET /api/salud
 
   # ---------- Presentacion ----------
   frontend:

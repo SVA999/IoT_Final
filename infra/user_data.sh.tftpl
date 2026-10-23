@@ -1,5 +1,6 @@
 #!/bin/bash
-# Se ejecuta una vez como root en el primer arranque. Log: /var/log/plantas-bootstrap.log
+# Arranque completo y automatico de la instancia. Lo ejecuta cloud-init como root UNA vez por instancia.
+# Log: /var/log/plantas-bootstrap.log   (termina con "BOOTSTRAP OK" cuando todo esta corriendo)
 exec > /var/log/plantas-bootstrap.log 2>&1
 set -ex
 
@@ -11,31 +12,69 @@ apt-get install -y docker.io docker-compose-v2 git curl openssl
 echo "vm.max_map_count=262144" >> /etc/sysctl.conf
 sysctl -w vm.max_map_count=262144
 
-systemctl enable --now docker
+# ---------------------------------------------------------------------------------------------------------------
+# Disco de DATOS persistente (EBS aparte). TODO lo de Docker (imagenes y volumenes: Mongo/Orion, CrateDB, Postgres,
+# Grafana) vive aqui, asi que recrear la instancia con `terraform apply` NO pierde el historico.
+# Se monta ANTES de que Docker guarde nada. Si el disco no aparece se aborta: es preferible fallar a arrancar en el
+# disco efimero y perder los datos en silencio.
+# ---------------------------------------------------------------------------------------------------------------
+systemctl stop docker docker.socket || true
+DEV=/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${data_volume_id}
+for i in $(seq 1 60); do   # el disco se adjunta unos segundos despues de crearse la instancia (tope: 5 min)
+  [ -e "$DEV" ] && break
+  [ -e /dev/sdf ] && DEV=/dev/sdf && break
+  [ -e /dev/xvdf ] && DEV=/dev/xvdf && break
+  sleep 5
+done
+[ -e "$DEV" ] || { echo "ERROR: no aparecio el disco de datos ($DEV). Abortando para no perder datos."; exit 1; }
+blkid "$DEV" || mkfs.ext4 -L plantas-data "$DEV"   # solo se formatea si esta VIRGEN; si ya tiene datos, se respetan
+mkdir -p /data
+grep -q plantas-data /etc/fstab || echo "LABEL=plantas-data /data ext4 defaults,nofail 0 2" >> /etc/fstab   # reinicios futuros
+udevadm settle || true
+mount "$DEV" /data   # directo por dispositivo: no depende de que udev ya haya creado el enlace por etiqueta
+mkdir -p /data/docker /etc/docker /etc/systemd/system/docker.service.d
+echo '{"data-root": "/data/docker"}' > /etc/docker/daemon.json
+# Si /data no estuviera montado en un reinicio, Docker NO arranca (en vez de crear bases vacias en el disco efimero)
+printf '[Unit]\nRequiresMountsFor=/data\n' > /etc/systemd/system/docker.service.d/data.conf
+systemctl daemon-reload
+systemctl enable docker
+systemctl start docker
+# Contenedores de una instancia anterior que Docker acaba de revivir desde el disco: se quitan (los DATOS se conservan)
+docker ps -aq | xargs -r docker rm -f
 
+# ---------------------------------------------------------------------------------------------------------------
+# Codigo y configuracion. Los secretos llegan desde terraform.tfvars; el .env solo existe en esta instancia.
+# ---------------------------------------------------------------------------------------------------------------
 cd /opt
 git clone ${repo_url} IoT_Final
 cd IoT_Final
+git checkout ${repo_version}
+
+AUTH_SECRET="${auth_secret}"
+[ -n "$AUTH_SECRET" ] || AUTH_SECRET=$(openssl rand -hex 32)
 cat > .env <<ENV
 DWH_USER=dwh
 DWH_PASSWORD=${dwh_password}
 DWH_DB=plantas
 FRONT_USER=${front_user}
 FRONT_PASSWORD=${front_password}
-AUTH_SECRET=$(openssl rand -hex 32)
+AUTH_SECRET=$AUTH_SECRET
 CRATE_PASSWORD=${crate_password}
 GEMINI_API_KEY=${gemini_api_key}
-GEMINI_MODEL=gemini-3.6-flash
+GEMINI_MODEL=${gemini_model}
 TELEGRAM_BOT_TOKEN=${telegram_bot_token}
 TELEGRAM_CHAT_IDS=${telegram_chat_ids}
+TIMEZONE=${timezone}
+DEPLOY_ID=${repo_version}
 ENV
 chmod 600 .env
 
-docker compose up -d --build crate-db
-bash doc/crate_auth.sh
+# Bases primero; luego se igualan sus claves con el .env (las bases persistentes conservan la clave con la que nacieron)
+docker compose up -d --build crate-db dwh
+bash doc/sync_claves.sh
 docker compose up -d --build
 
-# Esperar al Agente IoT y a Orion, y provisionar (grupo de servicio, dispositivo, suscripcion)
+# Esperar al Agente IoT y a Orion, y provisionar (grupo de servicio, dispositivo y las 2 suscripciones)
 for i in $(seq 1 60); do
   curl -sf http://localhost:4041/iot/about && curl -sf http://localhost:1036/version && break
   sleep 5
@@ -52,4 +91,7 @@ chmod 644 /etc/cron.d/plantas-etl
 cat > /etc/logrotate.d/plantas-etl <<'LR'
 /var/log/plantas-etl.log { weekly rotate 4 compress missingok notifempty }
 LR
+
+docker compose ps
+curl -s http://localhost/api/salud || true
 echo "BOOTSTRAP OK"

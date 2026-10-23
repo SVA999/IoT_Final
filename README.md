@@ -71,10 +71,10 @@ docker-compose.yml   Todos los servicios
 cd infra
 cp terraform.tfvars.example terraform.tfvars   # completar claves y repo_url
 terraform init && terraform apply
-terraform output                               # IP elástica fija, URLs, comando SSH
+terraform output                               # IP elástica fija, URLs, version y comprobacion
 ```
 
-La instancia instala Docker, clona el repo, crea el usuario de Crate, levanta el compose y provisiona el agente. Cuando `sudo tail -f /var/log/plantas-bootstrap.log` muestre `BOOTSTRAP OK` (5–10 min), abre `http://<IP>`.
+Un solo comando basta: crea un **disco de datos aparte** (el historial sobrevive a recrear la instancia), carga **todos los secretos** de `terraform.tfvars` (claves, Gemini, Telegram), instala Docker, despliega el último commit de GitHub, levanta los servicios, crea las suscripciones de Orion y programa el cron de seguridad. Cuando `sudo tail -f /var/log/plantas-bootstrap.log` muestre `BOOTSTRAP OK` (5–10 min), abre `http://<IP>`.
 Pon esa IP en `URL_SERVIDOR` de `firmware/IoT_Orion/src/main.cpp` y flashea el ESP32 (la IP es fija: se hace una sola vez).
 
 Paso a paso completo, actualizaciones, reconstrucción y solución de problemas: **[doc/GUIA_DESPLIEGUE_AWS.md](doc/GUIA_DESPLIEGUE_AWS.md)**.
@@ -96,9 +96,9 @@ Front en `http://localhost` (usuario/clave `FRONT_USER`/`FRONT_PASSWORD` del `.e
 
 | Quiero… | Comando |
 |---|---|
-| Actualizar el código en la EC2 | `cd /opt/IoT_Final && sudo git pull && sudo docker compose up -d --build` |
+| Desplegar/actualizar TODO (código, secretos, Telegram) | `git push` y luego `terraform apply` en `infra/` (el historial se conserva en el disco de datos) |
 | Re-provisionar el agente (idempotente) | `sudo bash doc/provisionar.sh localhost` |
-| Reconstruir solo la EC2 conservando la IP | `terraform apply -replace=aws_instance.plantas` (en `infra/`, tras `git push`) |
+| Saber qué versión corre | `curl http://<IP>/api/salud` → `version` = commit desplegado |
 | Ver datos en Orion | `curl.exe http://<IP>:1036/v2/entities -H "fiware-service: openiot" -H "fiware-servicepath: /"` |
 | Ver datos en Crate | `http://<IP>:4200` (usuario `iot`) → `SELECT * FROM mtopeniot.etplantsensor` |
 | Conectar DataGrip a Postgres | Túnel SSH a la EC2 y host `127.0.0.1:5432` (ver la guía, sección C) |

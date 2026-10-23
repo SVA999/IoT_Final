@@ -135,67 +135,78 @@ En Academy no se crean access keys propias. Cada sesión entrega credenciales te
 6. Si el Lab se reinicia y la instancia desaparece, borra `terraform.tfstate*` y `.terraform/` antes de volver a aplicar.
 
 ### B3. Preparar variables
-Haz los pasos 0.2 a 0.5 (repo público, tu IP, Key Pair).
+Haz los pasos 0.2 a 0.5 (repo en GitHub, tu IP, Key Pair).
 ```bash
 cd infra
 cp terraform.tfvars.example terraform.tfvars
 ```
-Edita `terraform.tfvars`:
-```hcl
-region       = "us-east-1"
-key_name     = "vockey"
-admin_cidr   = "0.0.0.0/0"          # quien entra a SSH, Crate (4200) y Grafana (3000). Mejor "TU_IP/32"
-repo_url     = "https://github.com/USUARIO/IoT_Final.git"
-dwh_password   = "una-clave-segura"
-crate_password = "otra-clave-segura"  # usuario "iot" de CrateDB; sin comillas simples ni $
-front_user     = "admin"
-front_password = "clave-del-front"
-gemini_api_key = "AIza..."          # https://aistudio.google.com/apikey (opcional)
-# ubuntu_version = "24.04"          # descomenta si no hay AMI 26.04 en tu región
-```
+`terraform.tfvars` es **la única fuente de configuración**: todos los secretos (claves, API key de Gemini, token de Telegram) entran por aquí
+y Terraform los deja ya cargados en la instancia. Git lo ignora. Completa al menos `admin_cidr`, `repo_url` y las tres claves
+(`dwh_password`, `crate_password`, `front_password`); Terraform **rechaza** claves cortas, con comillas, `$` o espacios, y los valores `CAMBIAR...`.
+Para los avisos de Telegram ver [NOTIFICACIONES.md](NOTIFICACIONES.md).
 
-### B4. Desplegar
+### B4. Desplegar: un solo comando
 ```bash
-terraform init        # descarga el proveedor AWS
-terraform validate
-terraform plan        # revisa que cree: SG, EC2, IP elástica
-terraform apply       # escribe "yes"
+terraform init
+terraform apply       # revisa el plan y escribe "yes"
 ```
-Al terminar muestra las `outputs`: IP elástica (fija), URL del front, URL de Orion, URL para el device y el comando SSH (con `labsuite.pem`). Terraform usa `LabInstanceProfile` por defecto; no crea roles.
+Eso es todo: crea la red, el **disco de datos**, la instancia y la IP fija; la instancia instala Docker, monta el disco, descarga
+el código, carga los secretos, levanta los 11 servicios, crea las dos suscripciones de Orion y programa el cron de seguridad.
+Al terminar, `terraform apply` imprime la IP, el front, la URL que usa el sensor y `comprobar`.
 
-### B5. Esperar el arranque automático
-La instancia ya existe, pero aún está instalando. Entra y sigue el log:
+### B5. Esperar y comprobar (5–10 min)
 ```bash
-ssh -i labsuite.pem ubuntu@IP
-sudo tail -f /var/log/plantas-bootstrap.log
+curl http://<IP>/api/salud            # {"ok":true,"version":"<commit desplegado>"}
 ```
-Termina cuando aparece `BOOTSTRAP OK` (5–10 min). Ahí ya está todo levantado **y provisionado**: no hay que correr nada más. Haz la prueba del paso A9.
+`version` es el commit que corre: si coincide con tu último `git push`, es la versión nueva. Si quieres ver el arranque:
+`ssh -i labsuite.pem ubuntu@<IP>` y `sudo tail -f /var/log/plantas-bootstrap.log` (termina en `BOOTSTRAP OK`).
 
-### B6. Cambios posteriores (sin rehacer la máquina)
-El bootstrap solo corre al **crear** la instancia, así que Terraform no actualiza el código. Para actualizar:
-1. Haz `git push` desde tu PC.
-2. Entra por SSH y ejecuta:
+### B6. Actualizar el código: otra vez `terraform apply`
+1. `git push` desde tu PC.
+2. `terraform apply` en `infra/`.
+
+Terraform consulta en GitHub el **último commit** de la rama y lo despliega: si hay uno nuevo, recrea la instancia con el código nuevo.
+**El historial no se pierde**: las bases de datos viven en el disco de datos (EBS), que se suelta y se vuelve a adjuntar. La IP no cambia.
+Lo mismo ocurre si cambias un secreto en `terraform.tfvars` (p. ej. el token de Telegram): `terraform apply` y listo.
+
+Reglas del juego:
+- **No uses `git pull` dentro de la instancia**: queda fijada a un commit (la actualiza Terraform).
+- Lo que no esté en GitHub (`git push`) **no se despliega**.
+- Si el repo es privado, define `repo_ref = "<commit>"` en `terraform.tfvars` (Terraform no puede consultar GitHub).
+- Las bases conservan la clave con la que nacieron; el arranque las **iguala** con tu `terraform.tfvars` (`doc/sync_claves.sh`).
+- Recrear tarda unos minutos de **interrupción** (el sensor no llega a Orion mientras tanto).
+
+### B7. Qué se conserva y qué no
+| | Se conserva al recrear | Dónde vive |
+|---|---|---|
+| Lecturas crudas (Crate), DWH (Postgres), entidades/suscripciones (Mongo), Grafana | ✅ | disco de datos (EBS), montado en `/data` |
+| IP pública | ✅ | IP elástica |
+| `.env`, código, cron, logs | ❌ (se regeneran solos) | disco del sistema |
+| Sesiones abiertas del front | ❌ (si `auth_secret` está vacío) | — |
+
+El disco tiene `prevent_destroy`: **`terraform destroy` falla a propósito** para no borrar el historial por accidente. Para respaldarlo:
+desde la consola EC2 → *Volumes* → `plantas-datos` → *Create snapshot*, o con `bash doc/backup_restore.sh backup`.
+
+### B8. Migrar el historial que ya existe (solo la primera vez)
+Los datos que hoy están en la instancia **antigua** (creada antes del disco de datos) viven en su disco del sistema, que se destruye al recrearla.
+Si quieres conservarlos, **antes del primer `terraform apply`**:
+1. `git push` (para que la instancia antigua tenga `doc/backup_restore.sh`) y, en la instancia antigua:
    ```bash
    cd /opt/IoT_Final && sudo git pull
-   sudo bash doc/crate_auth.sh              # solo si cambiaste CRATE_PASSWORD en .env
-   sudo docker compose up -d --build
-   sudo bash doc/provisionar.sh localhost   # idempotente; hazlo si tocaste el agente o el mapeo
+   sudo bash doc/backup_restore.sh backup /tmp/respaldo      # detiene el sistema ~1 min y lo reinicia
+   sudo chown -R ubuntu /tmp/respaldo
    ```
-Cambios de infraestructura (puertos del SG, `admin_cidr`, tipo de instancia): edita `tfvars` y `terraform apply`.
-Ojo: cambiar `repo_url` o cualquier clave (`dwh_password`, `crate_password`, `front_password`, `gemini_api_key`) cambia el `user_data` y **recrea la instancia**, perdiendo los datos (la IP elástica se conserva).
+2. En tu PC, descarga el respaldo: `scp -i labsuite.pem -r ubuntu@<IP_VIEJA>:/tmp/respaldo ./respaldo`
+3. `terraform apply` (deja que termine el arranque, B5).
+4. Sube y restaura en la instancia nueva (la IP elástica es la misma):
+   ```bash
+   scp -i labsuite.pem -r ./respaldo ubuntu@<IP>:/tmp/respaldo
+   ssh -i labsuite.pem ubuntu@<IP> "cd /opt/IoT_Final && sudo bash doc/backup_restore.sh restore /tmp/respaldo --yes"
+   ```
+A partir de ahí, cada `terraform apply` conserva los datos solo. Si el historial actual no importa, sáltate este apartado.
 
-### B7. Reconstruir la máquina desde cero (misma IP)
-Haz `git push` antes: la instancia nueva clona el repo desde GitHub.
-```bash
-terraform apply -replace=aws_instance.plantas     # solo la EC2; la IP elástica y el SG se mantienen
-# o todo: terraform destroy && terraform apply     # la IP elástica también se libera y cambia
-```
-Espera `BOOTSTRAP OK` (B5). Con `-replace` el firmware no necesita cambios.
-
-### B8. Borrar todo
-```bash
-terraform destroy
-```
+### B9. Borrar todo
+Quita el bloque `lifecycle { prevent_destroy = true }` del recurso `aws_ebs_volume.datos` en `infra/main.tf` (**esto borra el historial**) y ejecuta `terraform destroy`.
 
 ---
 
