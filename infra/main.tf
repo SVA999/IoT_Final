@@ -148,8 +148,16 @@ resource "aws_volume_attachment" "datos" {
 
 # IP fija: sobrevive a detener/iniciar y a recrear la instancia (terraform apply -replace)
 resource "aws_eip" "plantas" {
-  domain = "vpc"
-  tags   = { Name = "plantas-iot" }
+  domain  = "vpc"
+  address = var.eip_address != "" ? var.eip_address : null # recupera una IP liberada (la del chip) en vez de pedir una nueva
+  tags    = { Name = "plantas-iot" }
+
+  # La IP queda grabada en el programa del sensor: si se libera, AWS NO la devuelve y hay que reprogramar el chip.
+  # prevent_destroy impide perderla por accidente (terraform destroy, o un cambio que la reemplace). Para liberarla a
+  # proposito (fin del proyecto), elimina este bloque.
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_eip_association" "plantas" {

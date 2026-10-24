@@ -8,3 +8,7 @@ node_modules/
 dist/
 infra/labsuser.pem
 infra/.terraform.lock.hcl
+
+# Planes guardados de Terraform: contienen secretos
+tfplan*
+*.tfplan

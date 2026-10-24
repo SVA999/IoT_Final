@@ -33,14 +33,18 @@ grep -q plantas-data /etc/fstab || echo "LABEL=plantas-data /data ext4 defaults,
 udevadm settle || true
 mount "$DEV" /data   # directo por dispositivo: no depende de que udev ya haya creado el enlace por etiqueta
 mkdir -p /data/docker /etc/docker /etc/systemd/system/docker.service.d
+# Del disco persistente se CONSERVAN SOLO LOS VOLUMENES (los datos). Todo lo demas de Docker se borra con el servicio PARADO:
+# contenedores, cache de construccion (buildkit), redes... pertenecen a la instancia anterior y, al soltarse el disco,
+# quedan inconsistentes (contenedores sin nombre que `docker rm` no puede quitar; cache que apunta a capas de imagen que viven
+# en el disco del sistema y ya no existen -> "failed to extract layer ... content digest not found"). Docker los reconstruye.
+find /data/docker -mindepth 1 -maxdepth 1 ! -name volumes -exec rm -rf {} +
 echo '{"data-root": "/data/docker"}' > /etc/docker/daemon.json
 # Si /data no estuviera montado en un reinicio, Docker NO arranca (en vez de crear bases vacias en el disco efimero)
 printf '[Unit]\nRequiresMountsFor=/data\n' > /etc/systemd/system/docker.service.d/data.conf
 systemctl daemon-reload
 systemctl enable docker
 systemctl start docker
-# Contenedores de una instancia anterior que Docker acaba de revivir desde el disco: se quitan (los DATOS se conservan)
-docker ps -aq | xargs -r docker rm -f
+for i in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
 
 # ---------------------------------------------------------------------------------------------------------------
 # Codigo y configuracion. Los secretos llegan desde terraform.tfvars; el .env solo existe en esta instancia.

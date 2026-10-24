@@ -140,6 +140,17 @@ variable "instance_type" {
   default = "t3.large"
 }
 
+variable "eip_address" {
+  description = "IP elastica a RECUPERAR (una que ya liberaste y que el sensor tiene grabada en su programa). Vacia = AWS asigna una nueva. Cambiarla recrea la IP; el sensor solo llega si usa esa IP."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.eip_address == "" || can(regex("^([0-9]{1,3}[.]){3}[0-9]{1,3}$", var.eip_address))
+    error_message = "eip_address debe ser una IPv4, p. ej. 23.20.62.1 (o vacia)."
+  }
+}
+
 variable "disk_gb" {
   description = "Disco del sistema operativo (efimero: se recrea con la instancia)"
   type        = number

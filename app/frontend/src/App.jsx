@@ -251,7 +251,11 @@ const Dashboard = ({ onLogout }) => {
   }, [wsEstado, refrescar]);
   const cerrarAviso = (id) => setAvisos((prev) => prev.filter((x) => x.id !== id));
 
-  useEffect(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), [mensajes]);
+  // OJO: con llaves. Una flecha sin llaves DEVUELVE el valor de scrollIntoView y React lo toma como funcion de limpieza:
+  // si no es una funcion, la pantalla entera se rompe ("l is not a function") al llegar la respuesta de la IA.
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [mensajes]);
 
   const planta = plantas.find((p) => p.entity_id === plantaId);
   const datos = {

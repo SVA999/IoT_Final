@@ -189,40 +189,74 @@ class Pregunta(BaseModel):
     planta: str | None = None
 
 
-def ask_gemini(prompt: str) -> str:
-    if not GEMINI_API_KEY:
-        raise HTTPException(status_code=503, detail="GEMINI_API_KEY no configurada")
+GEMINI_FALLBACK_MODEL = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-3.5-flash-lite")
+# Errores TRANSITORIOS de Google (sobrecarga, cuota por minuto, caida momentanea): vale la pena reintentar
+REINTENTABLES = {0, 429, 500, 502, 503, 504}   # 0 = fallo de red/timeout
+
+
+def _gemini_una_vez(modelo: str, prompt: str):
+    """Una llamada a Gemini. Devuelve (texto | None, codigo_http, motivo)."""
     try:
         r = httpx.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
+            f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent",
             headers={"x-goog-api-key": GEMINI_API_KEY},
             json={"contents": [{"parts": [{"text": prompt}]}]},
-            timeout=60,
+            timeout=20,
         )
     except httpx.HTTPError as e:
-        raise HTTPException(status_code=504, detail=f"No se pudo contactar a Gemini: {e.__class__.__name__}")
+        return None, 0, e.__class__.__name__
     if r.status_code != 200:
         try:  # mensaje de Google (p. ej. modelo inexistente, clave invalida, cuota): util para diagnosticar
             motivo = r.json()["error"]["message"]
         except (KeyError, TypeError, ValueError):
             motivo = r.text[:200]
-        print(f"Gemini {GEMINI_MODEL} -> {r.status_code}: {motivo}", flush=True)
-        raise HTTPException(status_code=502, detail=f"Gemini ({GEMINI_MODEL}) respondio {r.status_code}: {motivo}"[:300])
+        return None, r.status_code, motivo
     try:
         parts = r.json()["candidates"][0]["content"]["parts"]
-        return "".join(p.get("text", "") for p in parts) or "La IA no genero respuesta."
+        return ("".join(p.get("text", "") for p in parts) or "La IA no genero respuesta."), 200, ""
     except (KeyError, IndexError, TypeError, ValueError):
         # p. ej. respuesta bloqueada por filtros de seguridad: no trae 'candidates'
-        raise HTTPException(status_code=502, detail="Gemini devolvio una respuesta sin contenido")
+        return None, 502, "respuesta sin contenido"
+
+
+def ask_gemini(prompt: str) -> str:
+    """Modelo principal con 2 intentos y, si Google esta saturado, un modelo de respaldo. Tiempo maximo ~1 min."""
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=503, detail="GEMINI_API_KEY no configurada")
+    codigo, motivo = 0, ""
+    for modelo, intentos in ((GEMINI_MODEL, 2), (GEMINI_FALLBACK_MODEL, 1)):
+        if not modelo:
+            continue
+        for i in range(intentos):
+            texto, codigo, motivo = _gemini_una_vez(modelo, prompt)
+            if texto is not None:
+                return texto
+            print(f"Gemini {modelo} intento {i + 1}/{intentos} -> {codigo}: {motivo}", flush=True)
+            if codigo not in REINTENTABLES:
+                break                      # error permanente de este modelo (clave, modelo inexistente...): pasar al respaldo
+            if i + 1 < intentos:
+                time.sleep(1.5)
+    if codigo in (429, 503):
+        raise HTTPException(status_code=502, detail="La IA de Google esta saturada en este momento. Intenta de nuevo en unos segundos.")
+    raise HTTPException(status_code=502, detail=f"Gemini respondio {codigo}: {motivo}"[:300])
 
 
 @app.post("/api/chat", dependencies=[Depends(require_auth)])
 def chat(p: Pregunta):
     try:
-        ctx = {"ultimas_lecturas": plantas(), "alertas_recientes": alertas(20)}
+        ctx = {
+            "ultimas_lecturas": plantas(),
+            "alertas_recientes": alertas(20),
+            # Lo que calculo el modelo predictivo (tendencia sobre lecturas reales): permite responder "¿cuando se acaba el agua?"
+            "predicciones_del_modelo": predicciones(24, 5),
+            "estado_del_modelo_por_variable": modelo_estado(p.planta),
+        }
     except psycopg.Error:
         raise HTTPException(status_code=503, detail="Base de datos no disponible")
-    prompt = ("Eres un asistente agronomo. Responde en español, breve y accionable, usando solo "
-              f"estos datos del sistema de monitoreo: {ctx}\n"
+    prompt = ("Eres un asistente agronomo. Responde en español, breve y accionable, usando SOLO los datos del sistema de "
+              "monitoreo que se te dan abajo; nunca inventes valores. Para preguntas sobre el futuro (cuando se acaba el agua, "
+              "si subira la temperatura...) usa 'predicciones_del_modelo' y 'estado_del_modelo_por_variable'; si el estado dice "
+              "que no hay datos suficientes o que el ajuste no es confiable, dilo asi en lugar de adivinar.\n"
+              f"Datos: {ctx}\n"
               f"Planta: {p.planta or 'todas'}\nPregunta: {p.pregunta}")
     return {"respuesta": ask_gemini(prompt)}
