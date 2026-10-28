@@ -11,6 +11,7 @@ const VARIABLES = {
 };
 // Cada estado del modelo se explica con palabras: nunca se oculta por que no hay prediccion.
 const ESTADOS = {
+  pronostico: ['Pronóstico', 'bg-sky-100 text-sky-700'],
   prediccion: ['Aviso: cruzará un límite', 'bg-red-100 text-red-700'],
   sin_riesgo: ['Sin riesgo cercano', 'bg-emerald-100 text-emerald-700'],
   estable: ['Estable', 'bg-emerald-100 text-emerald-700'],
@@ -42,8 +43,8 @@ const TrendChart = ({ puntos, estado, unidad }) => {
 
   const tUlt = estado?.ultima_lectura ? Date.parse(estado.ultima_lectura) : pts[pts.length - 1].t;
   const conTendencia = estado?.pendiente_h != null && estado?.valor_ajustado != null
-    && ['prediccion', 'sin_riesgo', 'estable', 'fuera_de_rango'].includes(estado.estado);
-  const horasProy = estado?.horas_hasta != null ? Math.min(estado.horas_hasta, 12) : 2;
+    && ['prediccion', 'sin_riesgo', 'estable', 'fuera_de_rango', 'pronostico'].includes(estado.estado);
+  const horasProy = estado?.estado === 'pronostico' ? 6 : estado?.horas_hasta != null ? Math.min(estado.horas_hasta, 12) : 2;
   const tFin = conTendencia ? tUlt + horasProy * 3.6e6 : pts[pts.length - 1].t;
   const vFin = conTendencia ? estado.valor_ajustado + estado.pendiente_h * horasProy : null;
   const cruce = estado?.estado === 'prediccion' && estado.horas_hasta != null
@@ -115,7 +116,25 @@ const TarjetaVariable = ({ col, estado, puntos }) => {
           </span>
         </p>
       )}
-      <p className="mt-2 text-sm text-gray-500">{estado?.detalle ?? 'El modelo aún no ha evaluado esta variable.'}</p>
+      {estado?.estado === 'pronostico' && Array.isArray(estado.pronostico) && (
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          {estado.pronostico.map((p) => (
+            <div key={p.horas} className="rounded-xl bg-sky-50 px-3 py-2 text-center">
+              <p className="text-xs font-semibold text-sky-700">
+                en {p.horas} h · ≈ {hora(Date.parse(estado.ultima_lectura) + p.horas * 3.6e6)}
+              </p>
+              <p className="text-xl font-extrabold text-gray-800">{p.valor.toFixed(1)}{meta.unidad}</p>
+              <p className="text-xs text-gray-500">± {p.margen.toFixed(1)}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      {estado?.estado !== 'pronostico' && (
+        <p className="mt-2 text-sm text-gray-500">{estado?.detalle ?? 'El modelo aún no ha evaluado esta variable.'}</p>
+      )}
+      {estado?.estado === 'pronostico' && (
+        <p className="mt-2 text-xs text-gray-400">Pronóstico del valor esperado, no un aviso. El margen es un intervalo de ~95 %.</p>
+      )}
       <div className="mt-3"><TrendChart puntos={puntos} estado={estado} unidad={meta.unidad} /></div>
       {estado?.n != null && (
         <p className="mt-2 text-xs text-gray-400">
@@ -158,6 +177,8 @@ export default function PantallaPredicciones({ plantaId, tick }) {
         <p>
           El modelo ajusta una <b>tendencia lineal sobre las lecturas reales</b> del sensor (últimas 6 h) y estima cuándo una variable
           cruzaría su límite. <b>No inventa datos</b>: si hay pocas lecturas, mucho ruido o el sensor dejó de enviar, no predice y te dice por qué.
+          La <b>temperatura</b> y la <b>humedad del aire</b> se pronostican (valor esperado en 1, 3 y 6 h con su margen), porque en un sitio
+          controlado no cruzan límites. La humedad del suelo sí se evalúa contra su mínimo.
           La luminosidad no se modela porque es cíclica (día/noche).
         </p>
       </div>

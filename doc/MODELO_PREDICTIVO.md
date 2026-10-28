@@ -5,7 +5,11 @@ El modelo se alimenta **únicamente** de las lecturas que envía el end device (
 valores de relleno ni semillas. Si no hay evidencia suficiente, **no predice**.
 
 ## Qué hace
-Para cada planta, y para `soil_moisture`, `temperature` y `humidity`, ajusta una recta (mínimos cuadrados) a las lecturas de las
+> **Temperatura y humedad del aire:** no se evalúan contra límites (en un sitio controlado no los cruzan). Se **pronostica** su valor a +1, +3 y +6 h
+> con margen de error (intervalo de predicción ~95 %), usando solo las últimas 2 h (`PRED_TEMP_WINDOW_H`). Si la pendiente no se
+> distingue del ruido, el pronóstico es el valor actual. No genera avisos de Telegram; las alertas de rango siguen activas.
+
+Para cada planta, y para `soil_moisture`, ajusta una recta (mínimos cuadrados) a las lecturas de las
 últimas 6 h y estima **cuándo cruzaría el límite agronómico** (`app/etl/config.py → WARN`). Si el cruce ocurre en ≤ 6 h, guarda una
 fila en `prediccion` y notifica. Ejemplo: *"Humedad del suelo llegaría al mínimo de 20% en ~2.4 h (tendencia −4.00 %/h, 40 lecturas reales, R²=0.99)"*.
 

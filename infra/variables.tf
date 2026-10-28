@@ -26,6 +26,17 @@ variable "admin_cidr" {
   }
 }
 
+variable "admin_cidrs_extra" {
+  description = "IP publicas adicionales en CIDR con el mismo acceso admin (por si tu proveedor rota la IP entre dos)"
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for c in var.admin_cidrs_extra : can(cidrhost(c, 0))])
+    error_message = "Cada elemento de admin_cidrs_extra debe ser un CIDR valido, p. ej. 190.1.2.3/32."
+  }
+}
+
 variable "repo_url" {
   description = "URL https del repo con este proyecto (publico, o con token embebido)"
   type        = string

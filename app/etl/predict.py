@@ -5,6 +5,7 @@ cruzaria el limite agronomico (config.WARN). No usa datos sinteticos ni de relle
 y lo dice (estado y detalle quedan en `modelo_estado`, que muestra la pantalla "Predicciones").
 
 Estados por variable:
+  pronostico          (temperatura y humedad del aire) valor esperado a +1, +3 y +6 h con margen de error; no genera avisos
   prediccion          cruzaria un limite dentro del horizonte (se avisa)
   sin_riesgo          hay tendencia hacia un limite, pero lo cruzaria mas alla del horizonte
   estable             se aleja de los limites (o no cambia)
@@ -43,17 +44,65 @@ MIN_SPAN_H = float(os.environ.get("PRED_MIN_SPAN_H", "1"))
 MIN_R2 = float(os.environ.get("PRED_MIN_R2", "0.6"))
 MAX_STALE_MIN = float(os.environ.get("PRED_MAX_STALE_MIN", "30"))
 COOLDOWN_H = float(os.environ.get("PRED_COOLDOWN_H", "3"))     # no repite el mismo aviso dentro de este plazo
+TEMP_WINDOW_H = float(os.environ.get("PRED_TEMP_WINDOW_H", "2"))   # temperatura: ventana corta para pronosticar su valor
+PRON_HORAS = (1.0, 3.0, 6.0)                                   # temperatura: dentro de cuantas horas se pronostica
+# Variables que NO se evaluan contra limites sino que se pronostican (en un sitio controlado no los cruzan)
+PRONOSTICO = {"temperature", "humidity"}
 
 
-def ajustar(puntos, salto):
-    """puntos: [(t_horas, valor)] ordenados. Devuelve {'estado': 'ok'|motivo, 'detalle', 'n', ...}."""
-    # Reiniciar la ventana tras el ultimo salto brusco (cambio de regimen, p. ej. riego)
+def _reiniciar(puntos, salto):
+    """Descarta lo anterior al ultimo salto brusco (cambio de regimen, p. ej. riego). Devuelve (puntos, hubo_reinicio)."""
     inicio = 0
     for i in range(1, len(puntos)):
         if abs(puntos[i][1] - puntos[i - 1][1]) > salto:
             inicio = i
-    reinicio = inicio > 0
-    puntos = puntos[inicio:]
+    return puntos[inicio:], inicio > 0
+
+
+def pronosticar(puntos, salto, unidad="°C"):
+    """Valor esperado dentro de PRON_HORAS horas, con margen de error (intervalo de prediccion ~95 %).
+    Usa solo las ultimas TEMP_WINDOW_H horas. Si la pendiente no es distinguible del ruido, pronostica el valor
+    actual (promedio de la ventana) en vez de extrapolar ruido. Devuelve el mismo formato que `ajustar`."""
+    puntos, reinicio = _reiniciar([p for p in puntos if p[0] >= -TEMP_WINDOW_H], salto)
+    n = len(puntos)
+    span = puntos[-1][0] - puntos[0][0] if n else 0.0
+    if n < MIN_POINTS or span < MIN_SPAN_H:
+        causa = " tras un cambio brusco" if reinicio else ""
+        return {"estado": "datos_insuficientes", "n": n,
+                "detalle": f"{n} lecturas ({span:.1f} h){causa}; se necesitan {MIN_POINTS} y {MIN_SPAN_H:g} h para pronosticar"}
+    xm = sum(x for x, _ in puntos) / n
+    ym = sum(y for _, y in puntos) / n
+    sxx = sum((x - xm) ** 2 for x, _ in puntos)
+    if sxx == 0:
+        return {"estado": "sin_datos", "n": n, "detalle": "las lecturas no tienen duración suficiente para pronosticar"}
+    b = sum((x - xm) * (y - ym) for x, y in puntos) / sxx
+    a = ym - b * xm
+    s2 = sum((y - (a + b * x)) ** 2 for x, y in puntos) / (n - 2)
+    se_b = (s2 / sxx) ** 0.5
+    con_tendencia = se_b > 0 and abs(b) > 2 * se_b
+    if not con_tendencia:
+        b, a = 0.0, ym
+        s2 = sum((y - ym) ** 2 for _, y in puntos) / (n - 1)
+    ss_tot = sum((y - ym) ** 2 for _, y in puntos)
+    r2 = 1 - sum((y - (a + b * x)) ** 2 for x, y in puntos) / ss_tot if ss_tot else None
+    x_fin = puntos[-1][0]
+    pron = []
+    for h in PRON_HORAS:
+        x0 = x_fin + h
+        var = s2 * (1 + 1 / n + ((x0 - xm) ** 2 / sxx if con_tendencia else 0))
+        valor = a + b * x0
+        if unidad == "%":
+            valor = min(100.0, max(0.0, valor))  # un porcentaje no sale de 0-100
+        pron.append({"horas": h, "valor": round(valor, 2), "margen": round(1.96 * var ** 0.5, 2)})
+    base = f"tendencia {b:+.2f} {unidad}/h" if con_tendencia else "sin tendencia (se mantiene cerca del valor actual)"
+    detalle = "; ".join(f"en {h:g} h: {p['valor']:.1f} ± {p['margen']:.1f} {unidad}" for h, p in zip(PRON_HORAS, pron))
+    return {"estado": "pronostico", "n": n, "r2": r2, "pendiente": b, "valor_ajustado": a + b * x_fin,
+            "pronostico": pron, "detalle": f"{detalle} ({base}, últimas {TEMP_WINDOW_H:g} h)"}
+
+
+def ajustar(puntos, salto):
+    """puntos: [(t_horas, valor)] ordenados. Devuelve {'estado': 'ok'|motivo, 'detalle', 'n', ...}."""
+    puntos, reinicio = _reiniciar(puntos, salto)
     n = len(puntos)
     span = puntos[-1][0] - puntos[0][0] if n else 0.0
     if n < MIN_POINTS or span < MIN_SPAN_H:
@@ -115,14 +164,16 @@ def evaluar(puntos, salto, col):
 def _guardar_estado(conn, eid, col, est, t_fin):
     conn.execute(
         "INSERT INTO modelo_estado(entity_id, variable, evaluado, estado, detalle, n, r2, pendiente_h, valor_ajustado, "
-        "ultima_lectura, limite_tipo, limite, horas_hasta) "
-        "VALUES (%s, %s, now(), %s, %s, %s, %s, %s, %s, to_timestamp(%s), %s, %s, %s) "
+        "ultima_lectura, limite_tipo, limite, horas_hasta, pronostico) "
+        "VALUES (%s, %s, now(), %s, %s, %s, %s, %s, %s, to_timestamp(%s), %s, %s, %s, %s::jsonb) "
         "ON CONFLICT (entity_id, variable) DO UPDATE SET evaluado = now(), estado = EXCLUDED.estado, "
         "detalle = EXCLUDED.detalle, n = EXCLUDED.n, r2 = EXCLUDED.r2, pendiente_h = EXCLUDED.pendiente_h, "
         "valor_ajustado = EXCLUDED.valor_ajustado, ultima_lectura = EXCLUDED.ultima_lectura, "
-        "limite_tipo = EXCLUDED.limite_tipo, limite = EXCLUDED.limite, horas_hasta = EXCLUDED.horas_hasta",
+        "limite_tipo = EXCLUDED.limite_tipo, limite = EXCLUDED.limite, horas_hasta = EXCLUDED.horas_hasta, "
+        "pronostico = EXCLUDED.pronostico",
         (eid, col, est["estado"], est["detalle"], est.get("n"), est.get("r2"), est.get("pendiente"),
-         est.get("valor_ajustado"), t_fin, est.get("limite_tipo"), est.get("limite"), est.get("horas_hasta")))
+         est.get("valor_ajustado"), t_fin, est.get("limite_tipo"), est.get("limite"), est.get("horas_hasta"),
+         json.dumps(est["pronostico"]) if est.get("pronostico") else None))
 
 
 def predecir(conn):
@@ -153,7 +204,7 @@ def predecir(conn):
                 continue
             t_fin = float(filas[-1][0])
             puntos = [((float(t) - t_fin) / 3600.0, float(v)) for t, v in filas]
-            est = evaluar(puntos, salto, col)
+            est = pronosticar(puntos, salto, unidad) if col in PRONOSTICO else evaluar(puntos, salto, col)
             _guardar_estado(conn, eid, col, est, t_fin)
             if est["estado"] != "prediccion":
                 continue

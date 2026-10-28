@@ -64,20 +64,20 @@ resource "aws_security_group" "plantas" {
 
   dynamic "ingress" {
     for_each = {
-      ssh     = { port = 22, cidr = var.admin_cidr }
-      http    = { port = 80, cidr = "0.0.0.0/0" }
-      https   = { port = 443, cidr = "0.0.0.0/0" }
-      orion   = { port = 1036, cidr = "0.0.0.0/0" }
-      agente  = { port = 7896, cidr = "0.0.0.0/0" }
-      crate   = { port = 4200, cidr = var.admin_cidr }
-      grafana = { port = 3000, cidr = var.admin_cidr }
+      ssh     = { port = 22, cidrs = concat([var.admin_cidr], var.admin_cidrs_extra) }
+      http    = { port = 80, cidrs = ["0.0.0.0/0"] }
+      https   = { port = 443, cidrs = ["0.0.0.0/0"] }
+      orion   = { port = 1036, cidrs = ["0.0.0.0/0"] }
+      agente  = { port = 7896, cidrs = ["0.0.0.0/0"] }
+      crate   = { port = 4200, cidrs = concat([var.admin_cidr], var.admin_cidrs_extra) }
+      grafana = { port = 3000, cidrs = concat([var.admin_cidr], var.admin_cidrs_extra) }
     }
     content {
       description = ingress.key
       from_port   = ingress.value.port
       to_port     = ingress.value.port
       protocol    = "tcp"
-      cidr_blocks = [ingress.value.cidr]
+      cidr_blocks = ingress.value.cidrs
     }
   }
 

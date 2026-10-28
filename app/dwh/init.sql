@@ -70,6 +70,8 @@ CREATE TABLE IF NOT EXISTS modelo_estado (
   horas_hasta     DOUBLE PRECISION,
   PRIMARY KEY (entity_id, variable)
 );
+-- Pronostico de valores futuros (temperatura): lista [{horas, valor, margen}]. Se agrega aparte para bases ya creadas.
+ALTER TABLE modelo_estado ADD COLUMN IF NOT EXISTS pronostico JSONB;
 
 -- Bandeja de salida de notificaciones externas (Telegram). Cada alerta/prediccion nueva se encola aqui y un
 -- despachador la envia: asi un fallo de red no pierde el aviso, y hay limite de reintentos y de repeticion.
